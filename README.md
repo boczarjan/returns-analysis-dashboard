@@ -38,6 +38,18 @@ Na Windows możesz też użyć pliku:
 .\run_app.bat
 ```
 
+## Haslo aplikacji
+
+Aplikacja wymaga jednego hasla, bez kont uzytkownikow. W pliku `.streamlit/password.hash` przechowywany jest tylko hash hasla.
+
+Utworz albo zmien haslo komenda:
+
+```powershell
+python set_password.py
+```
+
+Skrypt zapisuje hash `sha256("EsP!rR" + haslo + "J$%aKkP[]")` w pliku `.streamlit/password.hash`. Ten plik jest ignorowany przez Git.
+
 ## Dane
 
 Aplikacja nie zawiera pliku CSV z danymi, ponieważ dane sprzedażowe i zwrotowe zwykle nie powinny trafiać do publicznego repozytorium.

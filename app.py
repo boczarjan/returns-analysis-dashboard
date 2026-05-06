@@ -30,7 +30,6 @@ from returns_dashboard.data_loader import (
     load_returns_path_with_parquet,
     reason_columns,
 )
-from returns_dashboard.auth import DEFAULT_PASSWORD_HASH_PATH, verify_password_from_file
 from returns_dashboard.deep_analysis import (
     action_list,
     benchmark_products,
@@ -266,45 +265,6 @@ NAV_GROUPS = {
 
 TABLE_PREVIEW_ROWS = 500
 VARIANT_SEARCH_LIMIT = 75
-AUTH_SESSION_KEY = "returns_app_authenticated"
-
-
-def require_password() -> bool:
-    if st.session_state.get(AUTH_SESSION_KEY):
-        return True
-
-    render_hero(
-        "Returns Analysis",
-        "Wpisz haslo, aby uruchomic aplikacje.",
-    )
-
-    if not DEFAULT_PASSWORD_HASH_PATH.exists():
-        st.error(
-            f"Brak pliku z hashem hasla: `{DEFAULT_PASSWORD_HASH_PATH}`. "
-            "Wygeneruj go komenda `python set_password.py`."
-        )
-        return False
-
-    with st.form("password_form"):
-        password = st.text_input("Haslo", type="password")
-        submitted = st.form_submit_button("Odblokuj aplikacje")
-
-    if not submitted:
-        return False
-
-    if verify_password_from_file(password):
-        st.session_state[AUTH_SESSION_KEY] = True
-        st.rerun()
-
-    st.error("Nieprawidlowe haslo.")
-    return False
-
-
-def render_logout_button() -> None:
-    with st.sidebar:
-        if st.button("Wyloguj", width="stretch"):
-            st.session_state.pop(AUTH_SESSION_KEY, None)
-            st.rerun()
 
 
 def file_revision(path: str | Path) -> str:
@@ -1296,10 +1256,6 @@ def render_selected_view(view: str, df: pd.DataFrame) -> None:
 
 def main() -> None:
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-    if not require_password():
-        st.stop()
-
-    render_logout_button()
     df = sidebar_data_source()
     if df is None:
         st.stop()

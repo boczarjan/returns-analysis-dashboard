@@ -8,7 +8,6 @@ venv/
 env/
 
 .streamlit/secrets.toml
-.streamlit/password.hash
 .env
 .env.*
 !.env.example

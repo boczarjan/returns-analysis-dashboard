@@ -32,8 +32,6 @@ To najprostszy hosting dla tej aplikacji.
 
 Po wdrożeniu użytkownik może wgrać CSV przez panel boczny aplikacji. Nie trzeba dodawać pliku CSV do repozytorium.
 
-Przed udostepnieniem utworz plik `.streamlit/password.hash` komenda `python set_password.py` albo przenies gotowy plik z hashem na serwer.
-
 ## Render, Railway albo VPS
 
 Na hostingu, który uruchamia proces Pythona, użyj komendy startowej:
@@ -45,8 +43,6 @@ streamlit run app.py --server.port $PORT --server.address 0.0.0.0
 Jeżeli hosting nie ustawia zmiennej `$PORT`, użyj na przykład portu `8501`.
 
 ## Dane i sekrety
-
-Haslo do aplikacji jest weryfikowane przez hash zapisany w `.streamlit/password.hash`.
 
 - Nie wrzucaj prawdziwych plików CSV do publicznego repozytorium.
 - Lokalny folder `data/` jest ignorowany przez Git poza plikiem `.gitkeep`.

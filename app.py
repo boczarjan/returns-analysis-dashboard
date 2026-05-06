@@ -29,11 +29,13 @@ from returns_dashboard.data_loader import (
     load_returns_csv,
     load_returns_path_with_parquet,
     reason_columns,
+    validate_returns_data,
 )
 from returns_dashboard.deep_analysis import (
     action_list,
     benchmark_products,
     data_quality_report,
+    detect_product_anomalies,
     pareto_breakpoints,
     pareto_products,
     product_profile,
@@ -256,7 +258,7 @@ div[data-testid="stDataFrame"] {
 
 NAV_GROUPS = {
     "Dashboard": ["Executive summary", "Overview"],
-    "Priorytety": ["Action list", "Benchmarki"],
+    "Priorytety": ["Action list", "Watchlista", "Anomalie", "Benchmarki"],
     "Produkty": ["Profil produktu", "Segmentacja", "Pareto", "Produkty"],
     "Powody zwrotów": ["Powody zwrotów", "Rozmiarówka", "Sezony", "Symulacja"],
     "Dane i eksport": ["Jakość danych", "Dane"],
@@ -265,6 +267,19 @@ NAV_GROUPS = {
 
 TABLE_PREVIEW_ROWS = 500
 VARIANT_SEARCH_LIMIT = 75
+WATCHLIST_COLUMNS = [
+    "Article variant",
+    "priority",
+    "status",
+    "owner",
+    "due_date",
+    "problem_type",
+    "dominant_reason",
+    "return_rate",
+    "returned",
+    "recommended_action",
+    "notes",
+]
 
 
 def file_revision(path: str | Path) -> str:
@@ -327,6 +342,11 @@ def cached_benchmark_products(df: pd.DataFrame, min_sold: int) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, max_entries=64)
+def cached_product_anomalies(df: pd.DataFrame, min_sold: int) -> pd.DataFrame:
+    return detect_product_anomalies(df, min_sold=min_sold)
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
 def cached_product_profile(df: pd.DataFrame, article_variant: str) -> dict:
     return product_profile(df, article_variant)
 
@@ -349,6 +369,11 @@ def cached_pareto_breakpoints(pareto_df: pd.DataFrame) -> pd.DataFrame:
 @st.cache_data(show_spinner=False, max_entries=32)
 def cached_data_quality_report(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return data_quality_report(df)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def cached_validation_report(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    return validate_returns_data(df)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -710,6 +735,8 @@ def render_insight_cards(df: pd.DataFrame) -> None:
     reasons = cached_reason_summary(df)
     countries = cached_aggregate_by(df, "Country")
     types = cached_aggregate_by(df, "Article type")
+    if reasons.empty or countries.empty or types.empty:
+        return
     top_reason = reasons.iloc[0]
     top_country = countries.iloc[0]
     top_type = types.iloc[0]
@@ -805,6 +832,102 @@ def action_column_config() -> dict:
         "dominant_reason_share": st.column_config.NumberColumn("dominant reason share (%)", format="%.1f"),
         "priority_score": st.column_config.NumberColumn("priority score", format="%.0f", help="Wolumen nadwyżkowych zwrotów + siła dominującego powodu + gap vs kategoria."),
     }
+
+
+def watchlist_column_config() -> dict:
+    config = variant_column_config(
+        {
+            "priority": st.column_config.SelectboxColumn("priority", options=["High", "Medium", "Low"]),
+            "status": st.column_config.SelectboxColumn(
+                "status",
+                options=["New", "In review", "Action planned", "Done", "Ignored"],
+            ),
+            "owner": st.column_config.TextColumn("owner"),
+            "due_date": st.column_config.TextColumn("due date"),
+            "problem_type": st.column_config.TextColumn("problem type"),
+            "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f"),
+            "returned": st.column_config.NumberColumn("returned", format="%.0f"),
+            "notes": st.column_config.TextColumn("notes", width="large"),
+        }
+    )
+    return config
+
+
+def get_watchlist() -> pd.DataFrame:
+    if "watchlist" not in st.session_state:
+        st.session_state["watchlist"] = pd.DataFrame(columns=WATCHLIST_COLUMNS)
+    watchlist = st.session_state["watchlist"].copy()
+    for column in WATCHLIST_COLUMNS:
+        if column not in watchlist.columns:
+            watchlist[column] = ""
+    return watchlist[WATCHLIST_COLUMNS]
+
+
+def save_watchlist(watchlist: pd.DataFrame) -> None:
+    clean = watchlist.copy()
+    if "Article variant" in clean.columns:
+        clean = clean[clean["Article variant"].astype(str).str.strip().ne("")]
+        clean = clean.drop_duplicates("Article variant", keep="last")
+    st.session_state["watchlist"] = clean[WATCHLIST_COLUMNS]
+
+
+def add_variants_to_watchlist(actions: pd.DataFrame, variants: list[str]) -> int:
+    if not variants:
+        return 0
+    current = get_watchlist()
+    existing = set(current["Article variant"].astype(str))
+    rows = []
+    for _, row in actions[actions["Article variant"].astype(str).isin(variants)].iterrows():
+        variant = str(row["Article variant"])
+        if variant in existing:
+            continue
+        rows.append(
+            {
+                "Article variant": variant,
+                "priority": row.get("priority", "Medium"),
+                "status": "New",
+                "owner": "",
+                "due_date": "",
+                "problem_type": row.get("problem_type", ""),
+                "dominant_reason": row.get("dominant_reason", ""),
+                "return_rate": row.get("return_rate", 0.0),
+                "returned": row.get("returned", 0.0),
+                "recommended_action": row.get("recommended_action", ""),
+                "notes": "",
+            }
+        )
+    if not rows:
+        return 0
+    save_watchlist(pd.concat([current, pd.DataFrame(rows)], ignore_index=True))
+    return len(rows)
+
+
+def render_watchlist_editor() -> None:
+    watchlist = get_watchlist()
+    if watchlist.empty:
+        st.info("Watchlista jest pusta. Dodaj warianty z widoku Action list.")
+        return
+
+    edited = st.data_editor(
+        with_variant_links(watchlist),
+        width="stretch",
+        hide_index=True,
+        num_rows="dynamic",
+        column_config=watchlist_column_config(),
+        key="watchlist_editor",
+    )
+    edited = edited.copy()
+    if "Article variant" in edited.columns:
+        edited["Article variant"] = edited["Article variant"].astype(str).str.split("#").str[-1]
+    save_watchlist(edited)
+
+    st.download_button(
+        "Pobierz watchlistę CSV",
+        data=dataframe_to_csv_bytes(get_watchlist()),
+        file_name=f"returns_watchlist_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        width="stretch",
+    )
 
 
 def render_overview(df: pd.DataFrame) -> None:
@@ -922,6 +1045,20 @@ def render_action_list(df: pd.DataFrame) -> None:
 
     render_top_action_cards(actions)
     plot_variant_chart(action_list_chart(actions), key="action_list_variant_scatter")
+
+    with st.expander("Dodaj do watchlisty", expanded=False):
+        selected_for_watchlist = st.multiselect(
+            "Warianty do obserwacji",
+            options=actions["Article variant"].astype(str).head(200).tolist(),
+            placeholder="Wybierz warianty z action list...",
+        )
+        if st.button("Dodaj wybrane warianty", width="stretch"):
+            added = add_variants_to_watchlist(actions, selected_for_watchlist)
+            if added:
+                st.success(f"Dodano {added} wariantów do watchlisty.")
+            else:
+                st.info("Nie dodano nowych wariantów.")
+
     st.download_button(
         "Pobierz action list CSV",
         data=dataframe_to_csv_bytes(actions),
@@ -937,6 +1074,63 @@ def render_action_list(df: pd.DataFrame) -> None:
             hide_index=True,
             column_config=variant_column_config(action_column_config()),
         )
+
+
+def render_watchlist(df: pd.DataFrame) -> None:
+    render_guidance(
+        "Jak czytać watchlistę",
+        "Watchlista jest roboczym trackerem wariantów wymagających decyzji. Status, właściciel, termin i notatki są przechowywane w bieżącej sesji aplikacji.",
+    )
+    watchlist = get_watchlist()
+    if not watchlist.empty:
+        variants = watchlist["Article variant"].astype(str).tolist()
+        tracked_df = df[df["Article variant"].astype(str).isin(variants)]
+        if not tracked_df.empty:
+            render_kpis(tracked_df, df)
+    render_watchlist_editor()
+
+
+def render_anomalies(df: pd.DataFrame) -> None:
+    render_guidance(
+        "Jak czytać anomalie",
+        "Widok wyłapuje warianty odstające od kategorii lub całego datasetu, z dużym wolumenem zwrotów albo silną koncentracją jednego powodu. Niestabilne dane obniżają score, ale nadal są widoczne jako flaga.",
+    )
+    min_sold = st.slider("Minimalna sprzedaż do wykrywania anomalii", 1, 500, 30)
+    anomalies = cached_product_anomalies(df, min_sold=min_sold)
+    if anomalies.empty:
+        st.info("Brak anomalii dla aktualnych filtrów i progu sprzedaży.")
+        return
+
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Anomalie", format_number(len(anomalies)))
+    col_b.metric("Zwroty w anomaliach", format_number(anomalies["returned"].sum()))
+    col_c.metric("Śr. gap vs category", format_pp(anomalies["gap_vs_category"].mean()))
+
+    plot_variant_chart(
+        return_rate_scatter(anomalies.head(80), "Article variant", "Anomalie: return rate vs wolumen"),
+        key="anomalies_variant_scatter",
+    )
+    st.download_button(
+        "Pobierz anomalie CSV",
+        data=dataframe_to_csv_bytes(anomalies),
+        file_name=f"returns_anomalies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        width="stretch",
+    )
+    st.dataframe(
+        with_variant_links(anomalies.head(250)),
+        width="stretch",
+        hide_index=True,
+        column_config=variant_column_config(
+            {
+                "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f"),
+                "gap_vs_category": st.column_config.NumberColumn("gap vs category", format="%.1f"),
+                "gap_vs_dataset": st.column_config.NumberColumn("gap vs dataset", format="%.1f"),
+                "dominant_reason_share": st.column_config.NumberColumn("dominant reason share (%)", format="%.1f"),
+                "anomaly_score": st.column_config.NumberColumn("anomaly score", format="%.0f"),
+            }
+        ),
+    )
 
 
 def render_benchmarks(df: pd.DataFrame) -> None:
@@ -1021,6 +1215,10 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
     col_e.metric("Vs dataset", format_pp(summary["return_rate"] - summary["dataset_return_rate"]))
 
     st.info(f"Dominujący powód: {summary['dominant_reason']} | Rekomendacja: {summary['recommended_action']}")
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Udział dominującego powodu", format_percent(summary["dominant_reason_share"]))
+    col_b.metric("Est. zwroty dominującego powodu", format_number(summary["dominant_reason_returns"]))
+    col_c.metric("Balans rozmiarówki", format_pp(summary["size_balance"]))
 
     if full_page:
         variant_key = encode_variant_key(article_variant)
@@ -1061,6 +1259,39 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
             hide_index=True,
             column_config={"return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f")},
         )
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown('<div class="section-title">Powody vs kategoria</div>', unsafe_allow_html=True)
+        st.dataframe(
+            profile["reason_gap_vs_category"].head(10),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "share_of_returns": st.column_config.NumberColumn("variant share (%)", format="%.1f"),
+                "category_share_of_returns": st.column_config.NumberColumn("category share (%)", format="%.1f"),
+                "gap_vs_category": st.column_config.NumberColumn("gap vs category", format="%.1f"),
+                "estimated_returns": st.column_config.NumberColumn("est. returns", format="%.0f"),
+            },
+        )
+    with right:
+        st.markdown('<div class="section-title">Podobne lepsze warianty</div>', unsafe_allow_html=True)
+        similar = profile["similar_products"]
+        if similar.empty:
+            st.info("Brak podobnych wariantów z niższym return rate w aktualnym zakresie danych.")
+        else:
+            st.dataframe(
+                with_variant_links(similar),
+                width="stretch",
+                hide_index=True,
+                column_config=variant_column_config(
+                    {
+                        "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f"),
+                        "return_rate_advantage": st.column_config.NumberColumn("RR advantage", format="%.1f"),
+                        "returned_delta_if_like_peer": st.column_config.NumberColumn("potential delta", format="%.0f"),
+                    }
+                ),
+            )
 
     with st.expander("Dane źródłowe wariantu", expanded=full_page):
         raw_columns = [
@@ -1149,6 +1380,24 @@ def render_quality(df: pd.DataFrame) -> None:
         "Jak czytać jakość danych",
         "Niski wolumen i niestabilny status nie oznaczają, że produkt nie ma problemu. Oznaczają, że decyzje trzeba potwierdzić dodatkowymi danymi.",
     )
+    validation_summary, validation_issues = cached_validation_report(df)
+    st.markdown('<div class="section-title">Walidacja importu</div>', unsafe_allow_html=True)
+    if validation_issues.empty:
+        st.success("Nie znaleziono problemów walidacyjnych w aktualnym zestawie danych.")
+    else:
+        col_a, col_b, col_c = st.columns(3)
+        severity_counts = validation_issues["severity"].value_counts()
+        col_a.metric("Błędy", format_number(severity_counts.get("Error", 0)))
+        col_b.metric("Ostrzeżenia", format_number(severity_counts.get("Warning", 0)))
+        col_c.metric("Informacje", format_number(severity_counts.get("Info", 0)))
+        st.dataframe(
+            validation_issues,
+            width="stretch",
+            hide_index=True,
+            column_config={"share": st.column_config.NumberColumn("share (%)", format="%.1f")},
+        )
+
+    st.markdown('<div class="section-title">Ryzyka jakości danych</div>', unsafe_allow_html=True)
     summary, risky_rows = cached_data_quality_report(df)
     st.plotly_chart(quality_bar(summary), width="stretch")
     with st.expander("Szczegóły: wiersze wymagające ostrożności", expanded=False):
@@ -1230,6 +1479,10 @@ def render_selected_view(view: str, df: pd.DataFrame) -> None:
         render_overview(df)
     elif view == "Action list":
         render_action_list(df)
+    elif view == "Watchlista":
+        render_watchlist(df)
+    elif view == "Anomalie":
+        render_anomalies(df)
     elif view == "Benchmarki":
         render_benchmarks(df)
     elif view == "Profil produktu":

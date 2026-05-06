@@ -13,8 +13,28 @@ DEFAULT_CSV_PATH = Path(os.environ.get("RETURNS_CSV_PATH", "data/returns.csv"))
 
 REASON_PREFIX = "Return reason: "
 REASON_SUFFIX = " (%)"
-CACHE_SCHEMA_VERSION = "v2"
+CACHE_SCHEMA_VERSION = "v3"
 CACHE_DIR = Path(__file__).resolve().parents[1] / ".returns_cache"
+
+REQUIRED_COLUMNS = [
+    "Article variant",
+    "Sold articles",
+    "Returned articles",
+    "Return rate (%)",
+]
+
+OPTIONAL_ANALYSIS_COLUMNS = [
+    "NMV",
+    "Country",
+    "Category",
+    "Article type",
+    "Gender",
+    "Season",
+    "Zalando article variant",
+    "Estimated return rate status",
+    "Size-related return rate status",
+    "Size-related return rate (%)",
+]
 
 NUMERIC_COLUMNS = [
     "NMV",
@@ -33,6 +53,125 @@ def reason_columns(df: pd.DataFrame) -> list[str]:
 
 def clean_reason_name(column: str) -> str:
     return column.replace(REASON_PREFIX, "").replace(REASON_SUFFIX, "")
+
+
+def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    issues = []
+    total_rows = len(df)
+
+    for column in REQUIRED_COLUMNS:
+        if column not in df.columns:
+            issues.append(
+                {
+                    "severity": "Error",
+                    "area": "Schema",
+                    "check": f"Missing required column: {column}",
+                    "rows": total_rows,
+                    "share": 100.0 if total_rows else 0.0,
+                    "recommendation": "Dodaj kolumnę do pliku CSV przed analizą.",
+                }
+            )
+
+    missing_optional_columns = set(df.attrs.get("missing_optional_columns", []))
+    for column in OPTIONAL_ANALYSIS_COLUMNS:
+        if column not in df.columns or column in missing_optional_columns:
+            issues.append(
+                {
+                    "severity": "Info",
+                    "area": "Schema",
+                    "check": f"Missing optional column: {column}",
+                    "rows": total_rows,
+                    "share": 100.0 if total_rows else 0.0,
+                    "recommendation": "Aplikacja zadziała, ale część przekrojów lub raportów będzie uboższa.",
+                }
+            )
+
+    reason_cols = reason_columns(df)
+    if not reason_cols:
+        issues.append(
+            {
+                "severity": "Warning",
+                "area": "Schema",
+                "check": "No return reason columns",
+                "rows": total_rows,
+                "share": 100.0 if total_rows else 0.0,
+                "recommendation": "Dodaj kolumny 'Return reason: ... (%)', aby analizować przyczyny zwrotów.",
+            }
+        )
+
+    for column in ["Sold articles", "Returned articles", "Return rate (%)"]:
+        if column in df.columns:
+            missing = int(df[column].isna().sum())
+            if missing:
+                issues.append(
+                    {
+                        "severity": "Warning",
+                        "area": "Values",
+                        "check": f"Missing/non-numeric values in {column}",
+                        "rows": missing,
+                        "share": 100 * missing / total_rows if total_rows else 0.0,
+                        "recommendation": "Sprawdź separator dziesiętny, puste pola i wartości tekstowe.",
+                    }
+                )
+
+    if {"Sold articles", "Returned articles"}.issubset(df.columns):
+        negative = (df["Sold articles"].fillna(0) < 0) | (df["Returned articles"].fillna(0) < 0)
+        returned_over_sold = df["Returned articles"].fillna(0) > df["Sold articles"].fillna(0)
+        for label, mask, recommendation in [
+            ("Negative sold/returned values", negative, "Usuń wartości ujemne lub popraw eksport źródłowy."),
+            (
+                "Returned articles greater than sold articles",
+                returned_over_sold,
+                "Zweryfikuj agregację, okres raportowania lub mapowanie kolumn.",
+            ),
+        ]:
+            count = int(mask.sum())
+            if count:
+                issues.append(
+                    {
+                        "severity": "Error" if label.startswith("Negative") else "Warning",
+                        "area": "Values",
+                        "check": label,
+                        "rows": count,
+                        "share": 100 * count / total_rows if total_rows else 0.0,
+                        "recommendation": recommendation,
+                    }
+                )
+
+    if reason_cols:
+        reason_sum = df[reason_cols].fillna(0).sum(axis=1)
+        reason_outside_range = (reason_sum < 95) | (reason_sum > 105)
+        count = int(reason_outside_range.sum())
+        if count:
+            issues.append(
+                {
+                    "severity": "Warning",
+                    "area": "Return reasons",
+                    "check": "Return reason percentages do not sum to about 100%",
+                    "rows": count,
+                    "share": 100 * count / total_rows if total_rows else 0.0,
+                    "recommendation": "Sprawdź, czy eksport zawiera wszystkie powody zwrotów i właściwy separator.",
+                }
+            )
+
+    severity_order = {"Error": 0, "Warning": 1, "Info": 2}
+    issues_df = pd.DataFrame(issues)
+    if issues_df.empty:
+        issues_df = pd.DataFrame(
+            columns=["severity", "area", "check", "rows", "share", "recommendation"]
+        )
+    else:
+        issues_df["_order"] = issues_df["severity"].map(severity_order).fillna(9)
+        issues_df = issues_df.sort_values(["_order", "rows"], ascending=[True, False]).drop(columns="_order")
+
+    summary = (
+        issues_df.groupby("severity", dropna=False)
+        .agg(checks=("check", "count"), impacted_rows=("rows", "sum"))
+        .reset_index()
+        if not issues_df.empty
+        else pd.DataFrame(columns=["severity", "checks", "impacted_rows"])
+    )
+    return summary, issues_df
 
 
 def _path_cache_key(path: str | Path) -> str:
@@ -72,6 +211,17 @@ def load_returns_path_with_parquet(path: str | Path) -> pd.DataFrame:
 def load_returns_csv(source: str | Path | BinaryIO) -> pd.DataFrame:
     df = pd.read_csv(source, sep=";", dtype=str, keep_default_na=False)
     df.columns = [column.strip() for column in df.columns]
+
+    missing_required = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+    if missing_required:
+        missing = ", ".join(missing_required)
+        raise ValueError(f"Missing required columns: {missing}")
+
+    missing_optional = [column for column in OPTIONAL_ANALYSIS_COLUMNS if column not in df.columns]
+    for column in missing_optional:
+        df[column] = 0 if column in {"NMV", "Size-related return rate (%)"} else "Unknown"
+    if missing_optional:
+        df.attrs["missing_optional_columns"] = missing_optional
 
     for column in NUMERIC_COLUMNS + reason_columns(df):
         if column in df.columns:

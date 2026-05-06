@@ -163,9 +163,13 @@ def action_list(df: pd.DataFrame, min_sold: int = 30) -> pd.DataFrame:
         "return_rate",
         "category_return_rate",
         "gap_vs_category",
+        "gap_vs_dataset",
+        "gap_vs_type",
+        "excess_returns_vs_dataset",
         "dominant_reason",
         "dominant_reason_returns",
         "dominant_reason_share",
+        "size_balance",
         "priority_score",
         "confidence_flag",
         "recommended_action",
@@ -192,6 +196,129 @@ def benchmark_products(df: pd.DataFrame, min_sold: int = 30) -> pd.DataFrame:
     return products.sort_values("gap_vs_category", ascending=False)
 
 
+def detect_product_anomalies(df: pd.DataFrame, min_sold: int = 30) -> pd.DataFrame:
+    products = benchmark_products(df, min_sold=min_sold).copy()
+    if products.empty:
+        return products
+
+    dataset_rr = weighted_return_rate(df)
+    returned_q3 = products["returned"].quantile(0.75)
+    gap_q3 = products["gap_vs_category"].clip(lower=0).quantile(0.75)
+    high_gap = products["gap_vs_category"].fillna(0) >= max(gap_q3, 5)
+    high_volume = products["returned"].fillna(0) >= returned_q3
+    very_high_vs_dataset = products["gap_vs_dataset"].fillna(0) >= 10
+
+    reason_map = {}
+    reason_share_map = {}
+    for variant, group in df.groupby("Article variant", dropna=False):
+        reason, _, share = _dominant_reason(group)
+        reason_map[variant] = reason
+        reason_share_map[variant] = share
+
+    products["dominant_reason"] = products["Article variant"].map(reason_map).fillna("Unknown")
+    products["dominant_reason_share"] = products["Article variant"].map(reason_share_map).fillna(0.0)
+    concentrated_reason = products["dominant_reason_share"] >= 55
+
+    status_columns = [
+        column
+        for column in ["Estimated return rate status", "Size-related return rate status"]
+        if column in df.columns
+    ]
+    if status_columns:
+        unstable_mask = (
+            df[status_columns]
+            .astype(str)
+            .apply(lambda column: column.str.contains("unstable", case=False, na=False))
+            .any(axis=1)
+        )
+        unstable = unstable_mask.groupby(df["Article variant"], dropna=False).max()
+        products["unstable_status"] = products["Article variant"].map(unstable).fillna(False)
+    else:
+        products["unstable_status"] = False
+
+    products["anomaly_flags"] = [
+        ", ".join(
+            flag
+            for flag, active in [
+                ("high gap vs category", gap),
+                ("high return volume", volume),
+                ("very high vs dataset", dataset),
+                ("dominant reason concentration", reason),
+                ("unstable data status", unstable_flag),
+            ]
+            if active
+        )
+        for gap, volume, dataset, reason, unstable_flag in zip(
+            high_gap,
+            high_volume,
+            very_high_vs_dataset,
+            concentrated_reason,
+            products["unstable_status"],
+            strict=False,
+        )
+    ]
+    products["anomaly_score"] = (
+        np.maximum(products["gap_vs_category"].fillna(0), 0) * 2.0
+        + np.maximum(products["gap_vs_dataset"].fillna(0), 0) * 1.2
+        + products["returned"].fillna(0) * 0.35
+        + np.where(concentrated_reason, 20, 0)
+        - np.where(products["unstable_status"], 10, 0)
+    )
+    products = products[products["anomaly_flags"].astype(bool)].copy()
+    return products.sort_values("anomaly_score", ascending=False)
+
+
+def _reason_gap_vs_category(df: pd.DataFrame, product_df: pd.DataFrame, category: str) -> pd.DataFrame:
+    product_reasons = reason_summary(product_df)
+    if not category or "Category" not in df.columns:
+        product_reasons["category_share_of_returns"] = 0.0
+        product_reasons["gap_vs_category"] = product_reasons["share_of_returns"]
+        return product_reasons
+
+    category_df = df[df["Category"].eq(category)]
+    category_reasons = reason_summary(category_df)
+    if category_reasons.empty:
+        product_reasons["category_share_of_returns"] = 0.0
+        product_reasons["gap_vs_category"] = product_reasons["share_of_returns"]
+        return product_reasons
+
+    category_reasons = category_reasons[["reason", "share_of_returns"]].rename(
+        columns={"share_of_returns": "category_share_of_returns"}
+    )
+    comparison = product_reasons.merge(category_reasons, on="reason", how="left")
+    comparison["category_share_of_returns"] = comparison["category_share_of_returns"].fillna(0.0)
+    comparison["gap_vs_category"] = comparison["share_of_returns"] - comparison["category_share_of_returns"]
+    return comparison.sort_values("gap_vs_category", ascending=False)
+
+
+def _similar_better_products(df: pd.DataFrame, article_variant: str, category: str, article_type: str) -> pd.DataFrame:
+    ranking = product_ranking(df, min_sold=10).copy()
+    if ranking.empty:
+        return ranking
+    target = ranking[ranking["Article variant"].astype(str).eq(str(article_variant))]
+    if target.empty:
+        return ranking.iloc[0:0]
+
+    target_row = target.iloc[0]
+    peers = ranking[~ranking["Article variant"].astype(str).eq(str(article_variant))].copy()
+    if category and "Category" in peers.columns:
+        peers = peers[peers["Category"].eq(category)]
+    if article_type and "Article type" in peers.columns:
+        same_type = peers[peers["Article type"].eq(article_type)]
+        if not same_type.empty:
+            peers = same_type
+
+    peers = peers[peers["return_rate"] < target_row["return_rate"]].copy()
+    if peers.empty:
+        return peers
+    peers["return_rate_advantage"] = target_row["return_rate"] - peers["return_rate"]
+    peers["returned_delta_if_like_peer"] = np.maximum(
+        target_row["returned"] - target_row["sold"] * peers["return_rate"] / 100,
+        0,
+    )
+    return peers.sort_values(["return_rate_advantage", "sold"], ascending=[False, False]).head(10)
+
+
 def product_profile(df: pd.DataFrame, article_variant: str) -> dict[str, pd.DataFrame | dict[str, float | str]]:
     product_df = df[df["Article variant"].astype(str).eq(str(article_variant))].copy()
     if product_df.empty:
@@ -208,6 +335,10 @@ def product_profile(df: pd.DataFrame, article_variant: str) -> dict[str, pd.Data
     category_rr = weighted_return_rate(df[df["Category"].eq(category)]) if category else 0.0
     type_rr = weighted_return_rate(df[df["Article type"].eq(article_type)]) if article_type else 0.0
     reason, dominant_estimated, dominant_share = _dominant_reason(product_df)
+    too_big = product_df[SIZE_TOO_BIG].sum() if SIZE_TOO_BIG in product_df.columns else 0.0
+    too_small = product_df[SIZE_TOO_SMALL].sum() if SIZE_TOO_SMALL in product_df.columns else 0.0
+    returned = product_df["Returned articles"].sum()
+    size_balance = 100 * (too_small - too_big) / returned if returned else 0.0
 
     summary.update(
         {
@@ -219,13 +350,16 @@ def product_profile(df: pd.DataFrame, article_variant: str) -> dict[str, pd.Data
             "dominant_reason": reason,
             "dominant_reason_returns": dominant_estimated,
             "dominant_reason_share": dominant_share,
-            "recommended_action": recommendation_for_reason(reason),
+            "size_balance": size_balance,
+            "recommended_action": recommendation_for_reason(reason, size_balance),
         }
     )
 
     return {
         "summary": summary,
         "reasons": reason_summary(product_df),
+        "reason_gap_vs_category": _reason_gap_vs_category(df, product_df, category),
+        "similar_products": _similar_better_products(df, article_variant, category, article_type),
         "countries": aggregate_by(product_df, "Country"),
         "seasons": aggregate_by(product_df, "Season"),
         "raw": product_df,
@@ -375,90 +509,3 @@ def simulate_reason_reduction(df: pd.DataFrame, reasons: list[str], reduction_pc
         "new_return_rate": 100 * new_returned / total_sold if total_sold else 0.0,
         "return_rate_delta": (100 * total_returned / total_sold - 100 * new_returned / total_sold) if total_sold else 0.0,
     }
-
-
-def recommendation_for_reason(reason: str, size_balance: float = 0.0) -> str:
-    reason_lower = reason.lower()
-    if "too small" in reason_lower:
-        return "Sprawdź tabelę rozmiarów, komunikację fitu i opinie o zaniżonej rozmiarówce."
-    if "too big" in reason_lower:
-        return "Sprawdź opis fitu, zdjęcia na modelu i ryzyko zawyżonej rozmiarówki."
-    if "described" in reason_lower:
-        return "Zweryfikuj opis, zdjęcia, materiał, kolor i oczekiwania ustawiane na karcie produktu."
-    if "damaged" in reason_lower:
-        return "Sprawdź kontrolę jakości, pakowanie i powtarzalność problemu u dostawcy."
-    if "wrong item" in reason_lower:
-        return "Sprawdź mapowanie wariantów, kompletację i zgodność kodów produktu."
-    if "too expensive" in reason_lower:
-        return "Porównaj cenę z kategorią i sprawdź, czy value proposition jest jasne."
-    if "late" in reason_lower:
-        return "Sprawdź SLA fulfillmentu i kraje, w których opóźnienie występuje najczęściej."
-    if "no details" in reason_lower:
-        return "Traktuj jako lukę danych: szukaj dodatkowego wzorca po kraju, kategorii i rozmiarówce."
-    if "don't like" in reason_lower or "like" in reason_lower:
-        return "Zweryfikuj stylizację, zdjęcia, oczekiwania jakościowe i spójność produktu z kategorią."
-    if size_balance > 25:
-        return "Problem przechyla się w stronę za małych rozmiarów; zacznij od komunikacji fitu."
-    if size_balance < -25:
-        return "Problem przechyla się w stronę za dużych rozmiarów; zacznij od komunikacji fitu."
-    return "Sprawdź produkt w profilu szczegółowym i porównaj go z kategorią oraz rynkami."
-
-
-def data_quality_report(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    total_rows = len(df)
-    total_returned = df["Returned articles"].sum()
-    no_details = 0.0
-    no_details_column = "Estimated returns - No details"
-    if no_details_column in df.columns:
-        no_details = df[no_details_column].sum()
-
-    status_columns = [
-        column
-        for column in ["Estimated return rate status", "Size-related return rate status"]
-        if column in df.columns
-    ]
-    if status_columns:
-        unstable_mask = pd.Series(False, index=df.index)
-        for column in status_columns:
-            unstable_mask = unstable_mask | df[column].astype(str).str.contains("unstable", case=False, na=False)
-        unstable_rows = int(unstable_mask.sum())
-    else:
-        unstable_mask = pd.Series(False, index=df.index)
-        unstable_rows = 0
-
-    low_volume_rows = int((df["Sold articles"].fillna(0) < 10).sum())
-    summary = pd.DataFrame(
-        [
-            {
-                "metric": "Rows after filters",
-                "value": total_rows,
-                "share": 100.0,
-                "interpretation": "Zakres danych aktualnie analizowany w dashboardzie.",
-            },
-            {
-                "metric": "Rows with sold < 10",
-                "value": low_volume_rows,
-                "share": 100 * low_volume_rows / total_rows if total_rows else 0,
-                "interpretation": "Wysoki udział oznacza większe ryzyko szumu w return rate.",
-            },
-            {
-                "metric": "Rows with unstable status",
-                "value": unstable_rows,
-                "share": 100 * unstable_rows / total_rows if total_rows else 0,
-                "interpretation": "Te wiersze warto traktować ostrożniej w decyzjach produktowych.",
-            },
-            {
-                "metric": "Estimated returns with no details",
-                "value": no_details,
-                "share": 100 * no_details / total_returned if total_returned else 0,
-                "interpretation": "Wysoki udział ogranicza precyzję rekomendacji powodów zwrotu.",
-            },
-        ]
-    )
-
-    risk_rows = df.copy()
-    risk_rows["low_volume"] = risk_rows["Sold articles"].fillna(0) < 10
-    risk_rows["unstable_status"] = unstable_mask.reindex(risk_rows.index).fillna(False)
-    risk_rows["data_quality_risk"] = risk_rows["low_volume"] | risk_rows["unstable_status"]
-    risk_rows = risk_rows[risk_rows["data_quality_risk"]].sort_values("Returned articles", ascending=False)
-    return summary, risk_rows

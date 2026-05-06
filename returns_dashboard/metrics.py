@@ -67,6 +67,8 @@ def reason_summary(df: pd.DataFrame) -> pd.DataFrame:
                 "avg_reason_pct": df[column].mean(skipna=True),
             }
         )
+    if not rows:
+        return pd.DataFrame(columns=["reason", "estimated_returns", "share_of_returns", "avg_reason_pct"])
     return pd.DataFrame(rows).sort_values("estimated_returns", ascending=False)
 
 
@@ -88,6 +90,8 @@ def reason_by_dimension(df: pd.DataFrame, dimension: str, min_returned: int = 1)
                     "reason_share": 100 * estimated_returns / returned if returned else 0,
                 }
             )
+    if not rows:
+        return pd.DataFrame(columns=[dimension, "reason", "estimated_returns", "returned", "reason_share"])
     return pd.DataFrame(rows)
 
 

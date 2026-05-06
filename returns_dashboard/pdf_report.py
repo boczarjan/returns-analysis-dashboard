@@ -16,6 +16,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .data_loader import validate_returns_data
+from .deep_analysis import action_list, detect_product_anomalies, pareto_breakpoints, pareto_products
 from .metrics import aggregate_by, kpi_summary, product_ranking, reason_summary
 
 
@@ -210,6 +212,94 @@ def build_pdf_report(df: pd.DataFrame) -> bytes:
     ]
     story += _section("KPI summary", styles)
     story.append(_table(kpi_rows, [5 * cm, 5 * cm], styles["Cell"], styles["Header"]))
+
+    actions = action_list(df, min_sold=30).head(10)
+    if not actions.empty:
+        action_rows = [["Article variant", "Problem", "Returned", "RR", "Gap vs category", "Recommended action"]]
+        for row in actions.itertuples(index=False):
+            action_rows.append(
+                [
+                    row[0],
+                    row.dominant_reason,
+                    _fmt_number(row.returned),
+                    _fmt_percent(row.return_rate),
+                    _fmt_percent(row.gap_vs_category),
+                    row.recommended_action,
+                ]
+            )
+        story += _section("Executive action list", styles)
+        story.append(
+            _table(
+                action_rows,
+                [4 * cm, 4 * cm, 2.2 * cm, 2.1 * cm, 2.7 * cm, 10 * cm],
+                styles["Cell"],
+                styles["Header"],
+            )
+        )
+
+    anomalies = detect_product_anomalies(df, min_sold=30).head(10)
+    if not anomalies.empty:
+        anomaly_rows = [["Article variant", "Flags", "Score", "Returned", "RR", "Gap vs dataset"]]
+        for row in anomalies.itertuples(index=False):
+            anomaly_rows.append(
+                [
+                    row[0],
+                    row.anomaly_flags,
+                    _fmt_number(row.anomaly_score),
+                    _fmt_number(row.returned),
+                    _fmt_percent(row.return_rate),
+                    _fmt_percent(row.gap_vs_dataset),
+                ]
+            )
+        story += _section("Detected anomalies", styles)
+        story.append(
+            _table(
+                anomaly_rows,
+                [4.2 * cm, 8 * cm, 2.2 * cm, 2.5 * cm, 2.2 * cm, 2.8 * cm],
+                styles["Cell"],
+                styles["Header"],
+            )
+        )
+
+    pareto = pareto_products(df)
+    breakpoints = pareto_breakpoints(pareto)
+    if not breakpoints.empty:
+        pareto_rows = [["Return share", "Variants needed", "Variant share", "Returns covered"]]
+        for row in breakpoints.itertuples(index=False):
+            pareto_rows.append(
+                [
+                    _fmt_percent(row.return_share_threshold),
+                    _fmt_number(row.variants_needed),
+                    _fmt_percent(row.variant_share),
+                    _fmt_number(row.returns_covered),
+                ]
+            )
+        story += _section("Pareto breakpoints", styles)
+        story.append(_table(pareto_rows, [4 * cm, 4 * cm, 4 * cm, 4 * cm], styles["Cell"], styles["Header"]))
+
+    _, validation_issues = validate_returns_data(df)
+    validation_issues = validation_issues[validation_issues["severity"].isin(["Error", "Warning"])].head(8)
+    if not validation_issues.empty:
+        validation_rows = [["Severity", "Check", "Rows", "Share", "Recommendation"]]
+        for row in validation_issues.itertuples(index=False):
+            validation_rows.append(
+                [
+                    row.severity,
+                    row.check,
+                    _fmt_number(row.rows),
+                    _fmt_percent(row.share),
+                    row.recommendation,
+                ]
+            )
+        story += _section("Data validation", styles)
+        story.append(
+            _table(
+                validation_rows,
+                [2.7 * cm, 7 * cm, 2.2 * cm, 2.2 * cm, 10 * cm],
+                styles["Cell"],
+                styles["Header"],
+            )
+        )
 
     reasons = reason_summary(df).head(12)
     reason_rows = [["Reason", "Estimated returned articles", "Share of returns"]]

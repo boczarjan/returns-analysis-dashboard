@@ -1,24 +1,24 @@
 # Returns Analysis Dashboard
 
-Interaktywny dashboard Streamlit do przeglądania, filtrowania i wizualizacji powodów zwrotów z pliku CSV zDirect/Zalando.
+Interactive Streamlit dashboard for browsing, filtering, and visualizing return reasons from a zDirect/Zalando CSV file.
 
-## Funkcje
+## Features
 
-- KPI: sprzedaż, zwroty, ważony return rate, zwykła średnia return rate i NMV.
-- Interaktywne wykresy Plotly z hoverami, zoomem i filtrowaniem.
-- Analiza powodów zwrotów, krajów, kategorii, typów artykułów i sezonów.
-- Action list z priorytetami, typem problemu i rekomendowaną akcją.
-- Benchmarki wariantu vs kategoria, typ artykułu i cały dataset.
-- Klikalne kody `Article variant` prowadzące do osobnej strony wariantu.
-- Segmentacja, Pareto, analiza jakości danych i symulacja redukcji zwrotów.
-- Eksport aktualnie wyfiltrowanego raportu do PDF oraz eksport tabel do CSV.
-- Cache Parquet i cache obliczeń dla szybszego działania na większych plikach.
+- KPIs: sales, returns, weighted return rate, simple average return rate, and NMV.
+- Interactive Plotly charts with hover details, zoom, and filtering.
+- Analysis of return reasons, countries, categories, article types, and seasons.
+- Action list with priorities, problem type, and recommended action.
+- Variant benchmarks vs category, article type, and the full dataset.
+- Clickable `Article variant` codes that open a dedicated variant page.
+- Segmentation, Pareto, data quality analysis, and return reduction simulation.
+- PDF export for the currently filtered report and CSV export for tables.
+- Parquet cache and calculation cache for faster work on larger files.
 
-## Uruchomienie lokalne
+## Local Run
 
-1. Zainstaluj Pythona 3.11 lub nowszego.
-2. Sklonuj repozytorium albo pobierz projekt.
-3. W katalogu projektu utwórz środowisko i zainstaluj zależności:
+1. Install Python 3.11 or newer.
+2. Clone the repository or download the project.
+3. In the project directory, create an environment and install dependencies:
 
 ```powershell
 python -m venv .venv
@@ -26,29 +26,29 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-4. Uruchom aplikację:
+4. Start the app:
 
 ```powershell
 streamlit run app.py
 ```
 
-Na Windows możesz też użyć pliku:
+On Windows, you can also use:
 
 ```powershell
 .\run_app.bat
 ```
 
-## Dane
+## Data
 
-Aplikacja nie zawiera pliku CSV z danymi, ponieważ dane sprzedażowe i zwrotowe zwykle nie powinny trafiać do publicznego repozytorium.
+The app does not include a CSV data file because sales and returns data usually should not be stored in a public repository.
 
-Masz trzy opcje wczytania danych:
+You have three options for loading data:
 
-1. Wgraj plik CSV w panelu bocznym aplikacji.
-2. Umieść plik jako `data/returns.csv`.
-3. Ustaw zmienną środowiskową `RETURNS_CSV_PATH`:
+1. Upload a CSV file in the app sidebar.
+2. Place the file at `data/returns.csv`.
+3. Set the `RETURNS_CSV_PATH` environment variable:
 
 ```powershell
-$env:RETURNS_CSV_PATH="D:\sciezka\do\pliku.csv"
+$env:RETURNS_CSV_PATH="D:\path\to\file.csv"
 streamlit run app.py
 ```

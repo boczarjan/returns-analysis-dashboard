@@ -68,7 +68,7 @@ def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
                     "check": f"Missing required column: {column}",
                     "rows": total_rows,
                     "share": 100.0 if total_rows else 0.0,
-                    "recommendation": "Dodaj kolumnę do pliku CSV przed analizą.",
+                    "recommendation": "Add this column to the CSV file before analysis.",
                 }
             )
 
@@ -82,7 +82,7 @@ def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
                     "check": f"Missing optional column: {column}",
                     "rows": total_rows,
                     "share": 100.0 if total_rows else 0.0,
-                    "recommendation": "Aplikacja zadziała, ale część przekrojów lub raportów będzie uboższa.",
+                    "recommendation": "The app will work, but some dimensions or reports will be less complete.",
                 }
             )
 
@@ -95,7 +95,7 @@ def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
                 "check": "No return reason columns",
                 "rows": total_rows,
                 "share": 100.0 if total_rows else 0.0,
-                "recommendation": "Dodaj kolumny 'Return reason: ... (%)', aby analizować przyczyny zwrotów.",
+                "recommendation": "Add 'Return reason: ... (%)' columns to analyze return reasons.",
             }
         )
 
@@ -110,7 +110,7 @@ def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
                         "check": f"Missing/non-numeric values in {column}",
                         "rows": missing,
                         "share": 100 * missing / total_rows if total_rows else 0.0,
-                        "recommendation": "Sprawdź separator dziesiętny, puste pola i wartości tekstowe.",
+                        "recommendation": "Check the decimal separator, blank fields, and text values.",
                     }
                 )
 
@@ -118,11 +118,11 @@ def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
         negative = (df["Sold articles"].fillna(0) < 0) | (df["Returned articles"].fillna(0) < 0)
         returned_over_sold = df["Returned articles"].fillna(0) > df["Sold articles"].fillna(0)
         for label, mask, recommendation in [
-            ("Negative sold/returned values", negative, "Usuń wartości ujemne lub popraw eksport źródłowy."),
+            ("Negative sold/returned values", negative, "Remove negative values or fix the source export."),
             (
                 "Returned articles greater than sold articles",
                 returned_over_sold,
-                "Zweryfikuj agregację, okres raportowania lub mapowanie kolumn.",
+                "Verify aggregation, reporting period, or column mapping.",
             ),
         ]:
             count = int(mask.sum())
@@ -150,7 +150,7 @@ def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
                     "check": "Return reason percentages do not sum to about 100%",
                     "rows": count,
                     "share": 100 * count / total_rows if total_rows else 0.0,
-                    "recommendation": "Sprawdź, czy eksport zawiera wszystkie powody zwrotów i właściwy separator.",
+                    "recommendation": "Check whether the export includes all return reasons and the correct separator.",
                 }
             )
 

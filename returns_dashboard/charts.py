@@ -44,11 +44,11 @@ def reason_bar(reason_df: pd.DataFrame) -> go.Figure:
         color="share_of_returns",
         color_continuous_scale=["#d8f3dc", "#52b788", "#1b4332"],
         labels={
-            "estimated_returns": "Estymowane zwrocone sztuki",
-            "reason": "Powód",
-            "share_of_returns": "Udział w zwrotach (%)",
+            "estimated_returns": "Estimated returned items",
+            "reason": "Reason",
+            "share_of_returns": "Share of returns (%)",
         },
-        title="Największe powody zwrotów",
+        title="Top return reasons",
         hover_data={"share_of_returns": ":.1f", "estimated_returns": ":,.0f"},
     )
     return apply_layout(fig, 430)
@@ -63,8 +63,8 @@ def country_bar(country_df: pd.DataFrame) -> go.Figure:
         orientation="h",
         color="return_rate",
         color_continuous_scale=["#caf0f8", "#00b4d8", "#03045e"],
-        labels={"returned": "Zwrócone sztuki", "return_rate": "Return rate (%)"},
-        title="Zwroty według kraju",
+        labels={"returned": "Returned items", "return_rate": "Return rate (%)"},
+        title="Returns by country",
         hover_data={"sold": ":,.0f", "returned": ":,.0f", "return_rate": ":.1f"},
     )
     return apply_layout(fig, 430)
@@ -82,7 +82,7 @@ def return_rate_scatter(df: pd.DataFrame, label_col: str, title: str) -> go.Figu
         color="returned",
         hover_name=label_col,
         color_continuous_scale=["#fee8c8", "#fdbb84", "#e34a33"],
-        labels={"sold": "Sprzedane sztuki", "return_rate": "Return rate (%)", "returned": "Zwroty"},
+        labels={"sold": "Sold items", "return_rate": "Return rate (%)", "returned": "Returns"},
         title=title,
         hover_data={"sold": ":,.0f", "returned": ":,.0f", "return_rate": ":.1f"},
         custom_data=custom_data,
@@ -101,8 +101,8 @@ def stacked_reasons(reason_dim_df: pd.DataFrame, dimension: str, top_n: int = 10
         x=dimension,
         y="estimated_returns",
         color="reason",
-        labels={"estimated_returns": "Estymowane zwrocone sztuki", dimension: dimension, "reason": "Powód"},
-        title=f"Struktura powodów zwrotów: {dimension}",
+        labels={"estimated_returns": "Estimated returned items", dimension: dimension, "reason": "Reason"},
+        title=f"Return reason structure: {dimension}",
         hover_data={"reason_share": ":.1f", "estimated_returns": ":,.0f", "returned": ":,.0f"},
     )
     fig.update_layout(barmode="stack")
@@ -119,10 +119,10 @@ def reason_heatmap(reason_dim_df: pd.DataFrame, dimension: str, top_n: int = 12)
         matrix,
         aspect="auto",
         color_continuous_scale=["#f7fcf5", "#74c69d", "#1b4332"],
-        labels=dict(x="Powód", y=dimension, color="Udział (%)"),
-        title=f"Heatmapa udziału powodów zwrotów: {dimension}",
+        labels=dict(x="Reason", y=dimension, color="Share (%)"),
+        title=f"Return reason share heatmap: {dimension}",
     )
-    fig.update_traces(hovertemplate=f"{dimension}: %{{y}}<br>Powód: %{{x}}<br>Udział: %{{z:.1f}}%<extra></extra>")
+    fig.update_traces(hovertemplate=f"{dimension}: %{{y}}<br>Reason: %{{x}}<br>Share: %{{z:.1f}}%<extra></extra>")
     return apply_layout(fig, 500)
 
 
@@ -144,15 +144,15 @@ def size_reason_chart(df: pd.DataFrame, dimension: str) -> go.Figure:
         var_name="size_reason",
         value_name="estimated_returns",
     )
-    long["size_reason"] = long["size_reason"].replace({"too_big": "Za duży", "too_small": "Za mały"})
+    long["size_reason"] = long["size_reason"].replace({"too_big": "Too big", "too_small": "Too small"})
     fig = px.bar(
         long,
         x=dimension,
         y="estimated_returns",
         color="size_reason",
         barmode="group",
-        labels={"estimated_returns": "Estymowane zwrocone sztuki", "size_reason": "Problem"},
-        title=f"Problemy rozmiarowe według: {dimension}",
+        labels={"estimated_returns": "Estimated returned items", "size_reason": "Problem"},
+        title=f"Sizing issues by: {dimension}",
         hover_data={"sold": ":,.0f", "returned": ":,.0f"},
     )
     return apply_layout(fig, 430)
@@ -165,8 +165,8 @@ def treemap(df: pd.DataFrame) -> go.Figure:
         values="returned",
         color="return_rate",
         color_continuous_scale=["#d8f3dc", "#f9c74f", "#d00000"],
-        labels={"returned": "Zwroty", "return_rate": "Return rate (%)"},
-        title="Mapa kategorii i typów artykułów",
+        labels={"returned": "Returns", "return_rate": "Return rate (%)"},
+        title="Category and article type map",
         hover_data={"sold": ":,.0f", "returned": ":,.0f", "return_rate": ":.1f"},
     )
     return apply_layout(fig, 520)
@@ -183,12 +183,12 @@ def action_list_chart(df: pd.DataFrame) -> go.Figure:
         hover_name="Article variant",
         color_continuous_scale=["#d8f3dc", "#f9c74f", "#d00000"],
         labels={
-            "gap_vs_category": "Gap vs kategoria (p.p.)",
-            "dominant_reason_returns": "Zwroty dominującego powodu",
+            "gap_vs_category": "Gap vs category (p.p.)",
+            "dominant_reason_returns": "Dominant reason returns",
             "priority_score": "Priority score",
-            "returned": "Zwroty",
+            "returned": "Returns",
         },
-        title="Priorytety działań: wpływ vs odchylenie od kategorii",
+        title="Action priorities: impact vs category deviation",
         hover_data={
             "Article type": True,
             "sold": ":,.0f",
@@ -212,7 +212,7 @@ def benchmark_gap_chart(df: pd.DataFrame, gap_col: str = "gap_vs_category") -> g
         color=gap_col,
         color_continuous_scale=["#74c69d", "#f9c74f", "#d00000"],
         labels={gap_col: "Gap (p.p.)", "Article variant": "Article variant"},
-        title="Największe odchylenia return rate od benchmarku",
+        title="Largest return rate deviations from benchmark",
         hover_data={
             "Category": True,
             "Article type": True,
@@ -236,8 +236,8 @@ def segmentation_chart(df: pd.DataFrame) -> go.Figure:
         size="returned",
         color="segment",
         hover_name="Article variant",
-        labels={"sold": "Sprzedane sztuki", "return_rate": "Return rate (%)", "segment": "Segment"},
-        title="Segmentacja wariantów: wolumen vs return rate",
+        labels={"sold": "Sold items", "return_rate": "Return rate (%)", "segment": "Segment"},
+        title="Variant segmentation: volume vs return rate",
         hover_data={"Category": True, "Article type": True, "returned": ":,.0f"},
         custom_data=["Article variant"],
     )
@@ -253,24 +253,24 @@ def pareto_chart(df: pd.DataFrame) -> go.Figure:
     fig.add_bar(
         x=data["rank"],
         y=data["returned"],
-        name="Zwroty",
+        name="Returns",
         marker_color="#90a955",
-        hovertemplate="Rank %{x}<br>Zwroty %{y:,.0f}<extra></extra>",
+        hovertemplate="Rank %{x}<br>Returns %{y:,.0f}<extra></extra>",
     )
     fig.add_scatter(
         x=data["rank"],
         y=data["cumulative_return_share"],
-        name="Skumulowany udział zwrotów",
+        name="Cumulative return share",
         mode="lines",
         yaxis="y2",
         line=dict(color="#d00000", width=3),
-        hovertemplate="Rank %{x}<br>Skumulowany udział %{y:.1f}%<extra></extra>",
+        hovertemplate="Rank %{x}<br>Cumulative share %{y:.1f}%<extra></extra>",
     )
     fig.update_layout(
-        title="Pareto zwrotów po wariantach",
-        xaxis_title="Ranking wariantów",
-        yaxis=dict(title="Zwroty"),
-        yaxis2=dict(title="Skumulowany udział (%)", overlaying="y", side="right", range=[0, 100]),
+        title="Returns Pareto by variant",
+        xaxis_title="Variant ranking",
+        yaxis=dict(title="Returns"),
+        yaxis2=dict(title="Cumulative share (%)", overlaying="y", side="right", range=[0, 100]),
     )
     for threshold in [50, 80, 90]:
         fig.add_hline(y=threshold, yref="y2", line_dash="dot", line_color="#63736d")
@@ -285,8 +285,8 @@ def quality_bar(df: pd.DataFrame) -> go.Figure:
         y="share",
         color="share",
         color_continuous_scale=["#d8f3dc", "#f9c74f", "#d00000"],
-        labels={"metric": "Metryka", "share": "Udział (%)"},
-        title="Ryzyka jakości danych",
+        labels={"metric": "Metric", "share": "Share (%)"},
+        title="Data quality risks",
         hover_data={"value": ":,.0f", "interpretation": True},
     )
     return apply_layout(fig, 420)
@@ -298,10 +298,10 @@ def season_heatmap(df: pd.DataFrame) -> go.Figure:
         matrix,
         aspect="auto",
         color_continuous_scale=["#d8f3dc", "#f9c74f", "#d00000"],
-        labels=dict(x="Typ artykułu", y="Sezon", color="Return rate (%)"),
-        title="Return rate według sezonu i typu artykułu",
+        labels=dict(x="Article type", y="Season", color="Return rate (%)"),
+        title="Return rate by season and article type",
     )
-    fig.update_traces(hovertemplate="Sezon: %{y}<br>Typ: %{x}<br>Return rate: %{z:.1f}%<extra></extra>")
+    fig.update_traces(hovertemplate="Season: %{y}<br>Type: %{x}<br>Return rate: %{z:.1f}%<extra></extra>")
     return apply_layout(fig, 520)
 
 
@@ -310,7 +310,7 @@ def simulation_chart(result: dict[str, float]) -> go.Figure:
         go.Waterfall(
             orientation="v",
             measure=["absolute", "relative", "total"],
-            x=["Obecne zwroty", "Redukcja", "Po symulacji"],
+            x=["Current returns", "Reduction", "After simulation"],
             y=[result["current_returned"], -result["reduced_returns"], result["new_returned"]],
             text=[
                 f'{result["current_returned"]:,.0f}',
@@ -323,5 +323,5 @@ def simulation_chart(result: dict[str, float]) -> go.Figure:
             totals={"marker": {"color": "#31572c"}},
         )
     )
-    fig.update_layout(title="Symulowany wpływ redukcji powodów zwrotów", yaxis_title="Zwrócone sztuki")
+    fig.update_layout(title="Simulated impact of return reason reduction", yaxis_title="Returned items")
     return apply_layout(fig, 430)

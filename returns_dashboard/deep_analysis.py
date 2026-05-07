@@ -30,28 +30,28 @@ def _dominant_reason(group: pd.DataFrame) -> tuple[str, float, float]:
 def recommendation_for_reason(reason: str, size_balance: float = 0.0) -> str:
     reason_lower = reason.lower()
     if "too small" in reason_lower:
-        return "Sprawdź tabelę rozmiarów, komunikację fitu i opinie o zaniżonej rozmiarówce."
+        return "Check the size chart, fit communication, and feedback about undersized fit."
     if "too big" in reason_lower:
-        return "Sprawdź opis fitu, zdjęcia na modelu i ryzyko zawyżonej rozmiarówki."
+        return "Check the fit description, model photos, and risk of oversized fit."
     if "described" in reason_lower:
-        return "Zweryfikuj opis, zdjęcia, materiał, kolor i oczekiwania ustawiane na karcie produktu."
+        return "Verify the description, photos, material, color, and expectations set on the product page."
     if "damaged" in reason_lower:
-        return "Sprawdź kontrolę jakości, pakowanie i powtarzalność problemu u dostawcy."
+        return "Check quality control, packaging, and whether the issue repeats by supplier."
     if "wrong item" in reason_lower:
-        return "Sprawdź mapowanie wariantów, kompletację i zgodność kodów produktu."
+        return "Check variant mapping, picking, and product code consistency."
     if "too expensive" in reason_lower:
-        return "Porównaj cenę z kategorią i sprawdź, czy value proposition jest jasne."
+        return "Compare the price with the category and check whether the value proposition is clear."
     if "late" in reason_lower:
-        return "Sprawdź SLA fulfillmentu i kraje, w których opóźnienie występuje najczęściej."
+        return "Check fulfillment SLA and the countries where delays occur most often."
     if "no details" in reason_lower:
-        return "Traktuj jako lukę danych: szukaj dodatkowego wzorca po kraju, kategorii i rozmiarówce."
+        return "Treat this as a data gap: look for an additional pattern by country, category, and sizing."
     if "don't like" in reason_lower or "like" in reason_lower:
-        return "Zweryfikuj stylizację, zdjęcia, oczekiwania jakościowe i spójność produktu z kategorią."
+        return "Review styling, photos, quality expectations, and product fit with the category."
     if size_balance > 25:
-        return "Problem przechyla się w stronę za małych rozmiarów; zacznij od komunikacji fitu."
+        return "The issue skews toward too-small sizing; start with fit communication."
     if size_balance < -25:
-        return "Problem przechyla się w stronę za dużych rozmiarów; zacznij od komunikacji fitu."
-    return "Sprawdź produkt w profilu szczegółowym i porównaj go z kategorią oraz rynkami."
+        return "The issue skews toward too-big sizing; start with fit communication."
+    return "Review the product in the detailed profile and compare it with the category and markets."
 
 
 def action_list(df: pd.DataFrame, min_sold: int = 30) -> pd.DataFrame:
@@ -451,25 +451,25 @@ def data_quality_report(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "metric": "Rows after filters",
                 "value": total_rows,
                 "share": 100.0,
-                "interpretation": "Zakres danych aktualnie analizowany w dashboardzie.",
+                "interpretation": "The data range currently analyzed in the dashboard.",
             },
             {
                 "metric": "Rows with sold < 10",
                 "value": low_volume_rows,
                 "share": 100 * low_volume_rows / total_rows if total_rows else 0,
-                "interpretation": "Wysoki udział oznacza większe ryzyko szumu w return rate.",
+                "interpretation": "A high share means a higher risk of noise in the return rate.",
             },
             {
                 "metric": "Rows with unstable status",
                 "value": unstable_rows,
                 "share": 100 * unstable_rows / total_rows if total_rows else 0,
-                "interpretation": "Te wiersze warto traktować ostrożniej w decyzjach produktowych.",
+                "interpretation": "These rows should be treated more cautiously in product decisions.",
             },
             {
                 "metric": "Estimated returns with no details",
                 "value": no_details,
                 "share": 100 * no_details / total_returned if total_returned else 0,
-                "interpretation": "Wysoki udział ogranicza precyzję rekomendacji powodów zwrotu.",
+                "interpretation": "A high share limits the precision of return reason recommendations.",
             },
         ]
     )

@@ -54,14 +54,14 @@ FONT, FONT_BOLD = _register_font()
 
 def _fmt_number(value: float) -> str:
     try:
-        return f"{float(value):,.0f}".replace(",", " ")
+        return f"{float(value):,.0f}"
     except (TypeError, ValueError):
         return ""
 
 
 def _fmt_percent(value: float) -> str:
     try:
-        return f"{float(value):.1f}%".replace(".", ",")
+        return f"{float(value):.1f}%"
     except (TypeError, ValueError):
         return ""
 

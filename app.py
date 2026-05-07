@@ -258,10 +258,10 @@ div[data-testid="stDataFrame"] {
 
 NAV_GROUPS = {
     "Dashboard": ["Executive summary", "Overview"],
-    "Priorytety": ["Action list", "Watchlista", "Anomalie", "Benchmarki"],
-    "Produkty": ["Profil produktu", "Segmentacja", "Pareto", "Produkty"],
-    "Powody zwrotów": ["Powody zwrotów", "Rozmiarówka", "Sezony", "Symulacja"],
-    "Dane i eksport": ["Jakość danych", "Dane"],
+    "Priorities": ["Action list", "Watchlist", "Anomalies", "Benchmarks"],
+    "Products": ["Product profile", "Segmentation", "Pareto", "Products"],
+    "Return reasons": ["Return reasons", "Sizing", "Seasons", "Simulation"],
+    "Data and export": ["Data quality", "Data"],
 }
 
 
@@ -396,16 +396,16 @@ def cached_build_pdf_report(df: pd.DataFrame) -> bytes:
 
 
 def format_number(value: float) -> str:
-    return f"{value:,.0f}".replace(",", " ")
+    return f"{value:,.0f}"
 
 
 def format_percent(value: float) -> str:
-    return f"{value:.1f}%".replace(".", ",")
+    return f"{value:.1f}%"
 
 
 def format_pp(value: float) -> str:
     sign = "+" if value >= 0 else ""
-    return f"{sign}{value:.1f} p.p.".replace(".", ",")
+    return f"{sign}{value:.1f} p.p."
 
 
 def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
@@ -469,7 +469,7 @@ def variant_column_config(extra: dict | None = None) -> dict:
     config = {
         "Article variant": st.column_config.LinkColumn(
             "Article variant",
-            help="Kliknij kod, aby otworzyć analizę tego wariantu.",
+            help="Click the code to open this variant analysis.",
             display_text=r"#(.*)$",
             width="medium",
         )
@@ -518,25 +518,25 @@ def plot_variant_chart(fig, key: str) -> None:
 
 
 def sidebar_data_source() -> pd.DataFrame | None:
-    st.sidebar.header("Dane")
-    uploaded = st.sidebar.file_uploader("Wgraj CSV", type=["csv"])
-    fallback_path = st.sidebar.text_input("Ścieżka do pliku CSV", value=str(DEFAULT_CSV_PATH))
+    st.sidebar.header("Data")
+    uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+    fallback_path = st.sidebar.text_input("CSV file path", value=str(DEFAULT_CSV_PATH))
 
     try:
         if uploaded is not None:
             return cached_load_from_upload(uploaded)
         if fallback_path and Path(fallback_path).exists():
             return cached_load_from_path(fallback_path, file_revision(fallback_path))
-        st.sidebar.warning("Nie znaleziono pliku. Wgraj CSV albo podaj poprawną ścieżkę.")
+        st.sidebar.warning("File not found. Upload a CSV or provide a valid path.")
     except Exception as exc:
-        st.sidebar.error(f"Nie udało się wczytać danych: {exc}")
+        st.sidebar.error(f"Could not load data: {exc}")
     return None
 
 
 def sidebar_navigation() -> str:
-    st.sidebar.header("Nawigacja")
-    group = st.sidebar.radio("Obszar", list(NAV_GROUPS.keys()), index=0)
-    return st.sidebar.radio("Widok", NAV_GROUPS[group], index=0)
+    st.sidebar.header("Navigation")
+    group = st.sidebar.radio("Area", list(NAV_GROUPS.keys()), index=0)
+    return st.sidebar.radio("View", NAV_GROUPS[group], index=0)
 
 
 def multiselect_filter(df: pd.DataFrame, column: str, label: str) -> list[str]:
@@ -550,39 +550,39 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, object]]:
     active_filters: dict[str, object] = {}
     filtered = df.copy()
 
-    with st.sidebar.expander("Filtry", expanded=True):
+    with st.sidebar.expander("Filters", expanded=True):
         if "Article variant" in df.columns:
             all_variants = cached_unique_values(df, "Article variant")
             variant_query = st.text_input(
                 "Article variant",
-                placeholder="Wpisz fragment kodu wariantu...",
+                placeholder="Enter part of the variant code...",
             ).strip()
             variant_options = all_variants
             if variant_query:
                 query = variant_query.lower()
                 variant_options = [variant for variant in all_variants if query in variant.lower()]
                 st.caption(
-                    f"Znaleziono {len(variant_options)} dopasowań. "
-                    f"Lista wyboru pokazuje maks. {VARIANT_SEARCH_LIMIT}."
+                    f"Found {len(variant_options)} matches. "
+                    f"The picker shows up to {VARIANT_SEARCH_LIMIT}."
                 )
             visible_variant_options = variant_options[:VARIANT_SEARCH_LIMIT]
             selected_variants = st.multiselect(
-                "Wybierz warianty",
+                "Select variants",
                 options=visible_variant_options,
-                placeholder="Najpierw wpisz fragment kodu...",
+                placeholder="Enter part of the code first...",
             )
             if selected_variants:
                 filtered = filtered[filtered["Article variant"].astype(str).isin(selected_variants)]
                 active_filters["Article variant"] = selected_variants
 
         for column, label in [
-            ("Country", "Kraj"),
-            ("Category", "Kategoria"),
-            ("Article type", "Typ artykułu"),
-            ("Season", "Sezon"),
-            ("Gender", "Płeć"),
-            ("Estimated return rate status", "Status estymacji"),
-            ("Article visibility", "Widoczność"),
+            ("Country", "Country"),
+            ("Category", "Category"),
+            ("Article type", "Article type"),
+            ("Season", "Season"),
+            ("Gender", "Gender"),
+            ("Estimated return rate status", "Estimation status"),
+            ("Article visibility", "Visibility"),
         ]:
             selected = multiselect_filter(df, column, label)
             if selected:
@@ -590,7 +590,7 @@ def apply_filters(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, object]]:
                 active_filters[label] = selected
 
         max_sold = int(max(df["Sold articles"].max(), 1))
-        min_sold = st.slider("Minimalna sprzedaż w wierszu", 0, max_sold, 0)
+        min_sold = st.slider("Minimum sold articles per row", 0, max_sold, 0)
         if min_sold > 0:
             filtered = filtered[filtered["Sold articles"].fillna(0) >= min_sold]
             active_filters["Min. sold"] = min_sold
@@ -623,16 +623,16 @@ def render_filter_context(df: pd.DataFrame, active_filters: dict[str, object]) -
                 filters.append(f"{key}: {value}")
         filter_text = " | ".join(filters)
     else:
-        filter_text = "Brak aktywnych filtrów"
+        filter_text = "No active filters"
 
     st.markdown(
         f"""
         <div class="context-bar">
-          <span class="context-pill">Filtry: {html.escape(filter_text)}</span>
-          <span class="context-pill">Wiersze: {format_number(len(df))}</span>
+          <span class="context-pill">Filters: {html.escape(filter_text)}</span>
+          <span class="context-pill">Rows: {format_number(len(df))}</span>
           <span class="context-pill">Sold: {format_number(summary["sold"])}</span>
           <span class="context-pill">Returned: {format_number(summary["returned"])}</span>
-          <span class="context-pill">Ważony RR: {format_percent(summary["return_rate"])}</span>
+          <span class="context-pill">Weighted RR: {format_percent(summary["return_rate"])}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -642,16 +642,16 @@ def render_filter_context(df: pd.DataFrame, active_filters: dict[str, object]) -
 def render_kpis(df: pd.DataFrame, baseline_df: pd.DataFrame | None = None) -> None:
     summary = cached_kpi_summary(df)
     baseline = cached_kpi_summary(baseline_df)["return_rate"] if baseline_df is not None and not baseline_df.empty else None
-    delta = format_pp(summary["return_rate"] - baseline) if baseline is not None else "brak benchmarku"
+    delta = format_pp(summary["return_rate"] - baseline) if baseline is not None else "no benchmark"
     st.markdown(
         f"""
         <div class="kpi-grid">
-          <div class="kpi"><span>Sprzedane sztuki</span><strong>{format_number(summary["sold"])}</strong><small>Wolumen po filtrach.</small></div>
-          <div class="kpi"><span>Zwrócone sztuki</span><strong>{format_number(summary["returned"])}</strong><small>Liczba zwróconych sztuk.</small></div>
-          <div class="kpi"><span>Ważony return rate</span><strong>{format_percent(summary["return_rate"])}</strong><small>{delta} vs cały dataset.</small></div>
-          <div class="kpi"><span>Średni return rate</span><strong>{format_percent(summary["average_return_rate"])}</strong><small>Zwykła średnia z wierszy.</small></div>
-          <div class="kpi"><span>NMV</span><strong>{format_number(summary["nmv"])}</strong><small>Wartość sprzedaży w danych.</small></div>
-          <div class="kpi"><span>Warianty</span><strong>{format_number(summary["variants"])}</strong><small>Unikalne Article variant.</small></div>
+          <div class="kpi"><span>Sold articles</span><strong>{format_number(summary["sold"])}</strong><small>Volume after filters.</small></div>
+          <div class="kpi"><span>Returned articles</span><strong>{format_number(summary["returned"])}</strong><small>Number of returned items.</small></div>
+          <div class="kpi"><span>Weighted return rate</span><strong>{format_percent(summary["return_rate"])}</strong><small>{delta} vs full dataset.</small></div>
+          <div class="kpi"><span>Average return rate</span><strong>{format_percent(summary["average_return_rate"])}</strong><small>Simple row average.</small></div>
+          <div class="kpi"><span>NMV</span><strong>{format_number(summary["nmv"])}</strong><small>Sales value in the data.</small></div>
+          <div class="kpi"><span>Variants</span><strong>{format_number(summary["variants"])}</strong><small>Unique Article variants.</small></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -692,7 +692,7 @@ def enrich_actions(actions: pd.DataFrame) -> pd.DataFrame:
     enriched = actions.copy().reset_index(drop=True)
     enriched["priority"] = [priority_level_from_rank(i, len(enriched)) for i in range(len(enriched))]
     enriched["problem_type"] = enriched["dominant_reason"].map(classify_problem)
-    enriched["confidence"] = enriched["confidence_flag"].map(lambda value: "OK" if value == "OK" else "Ostrożnie")
+    enriched["confidence"] = enriched["confidence_flag"].map(lambda value: "OK" if value == "OK" else "Use caution")
     enriched["impact"] = enriched["returned"].map(lambda value: "High" if value >= enriched["returned"].quantile(0.75) else "Medium")
     return enriched
 
@@ -713,7 +713,7 @@ def render_guidance(title: str, text: str) -> None:
 
 def render_top_action_cards(actions: pd.DataFrame, limit: int = 5) -> None:
     if actions.empty:
-        st.info("Brak akcji dla aktualnych filtrów.")
+        st.info("No actions for the current filters.")
         return
     cards = []
     for _, row in actions.head(limit).iterrows():
@@ -725,7 +725,7 @@ def render_top_action_cards(actions: pd.DataFrame, limit: int = 5) -> None:
             f'{priority_badge(row["priority"])}'
             f'{badge(row["problem_type"], "info")}'
             f'<b>{variant_anchor(row["Article variant"])}</b>'
-            f'<span>{reason} | {returned} zwrotów | RR {return_rate}</span>'
+            f'<span>{reason} | {returned} returns | RR {return_rate}</span>'
             '</div>'
         )
     st.markdown(f'<div class="action-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
@@ -743,9 +743,9 @@ def render_insight_cards(df: pd.DataFrame) -> None:
     st.markdown(
         f"""
         <div class="insight-grid">
-          <div class="insight-card"><b>Największy powód</b><span>{html.escape(str(top_reason["reason"]))} | {format_number(top_reason["estimated_returns"])} est. szt.</span></div>
-          <div class="insight-card"><b>Największy rynek</b><span>{html.escape(str(top_country["Country"]))} | RR {format_percent(top_country["return_rate"])}</span></div>
-          <div class="insight-card"><b>Największy typ artykułu</b><span>{html.escape(str(top_type["Article type"]))} | {format_number(top_type["returned"])} zwrotów</span></div>
+          <div class="insight-card"><b>Top reason</b><span>{html.escape(str(top_reason["reason"]))} | {format_number(top_reason["estimated_returns"])} est. items</span></div>
+          <div class="insight-card"><b>Top market</b><span>{html.escape(str(top_country["Country"]))} | RR {format_percent(top_country["return_rate"])}</span></div>
+          <div class="insight-card"><b>Top article type</b><span>{html.escape(str(top_type["Article type"]))} | {format_number(top_type["returned"])} returns</span></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -756,8 +756,8 @@ def render_pdf_export(
     df: pd.DataFrame,
     key: str = "filtered_report",
     filename_prefix: str = "returns_report",
-    generate_label: str = "Generuj PDF dla aktualnych filtrów",
-    download_label: str = "Pobierz wygenerowany PDF",
+    generate_label: str = "Generate PDF for current filters",
+    download_label: str = "Download generated PDF",
 ) -> None:
     state_key = f"{key}_pdf_bytes"
     signature_key = f"{key}_pdf_signature"
@@ -771,7 +771,7 @@ def render_pdf_export(
             st.session_state.pop(filename_key, None)
 
     if st.button(generate_label, key=f"{key}_generate_pdf", type="primary", width="stretch"):
-        with st.spinner("Generuję PDF..."):
+        with st.spinner("Generating PDF..."):
             st.session_state[state_key] = cached_build_pdf_report(df)
             st.session_state[signature_key] = dataframe_signature(df)
             st.session_state[filename_key] = f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
@@ -787,7 +787,7 @@ def render_pdf_export(
 
 
 def render_executive_summary(df: pd.DataFrame) -> None:
-    st.markdown('<div class="section-title">Co naprawić najpierw</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">What to fix first</div>', unsafe_allow_html=True)
     actions = enrich_actions(cached_action_list(df, min_sold=30))
     render_top_action_cards(actions)
 
@@ -795,15 +795,15 @@ def render_executive_summary(df: pd.DataFrame) -> None:
     pareto = cached_pareto_products(df)
     breakpoints = cached_pareto_breakpoints(pareto)
     pareto_80 = breakpoints[breakpoints["return_share_threshold"].eq(80)].head(1)
-    pareto_text = "brak danych"
+    pareto_text = "no data"
     if not pareto_80.empty:
         row = pareto_80.iloc[0]
-        pareto_text = f'{format_number(row["variants_needed"])} wariantów ({format_percent(row["variant_share"])})'
+        pareto_text = f'{format_number(row["variants_needed"])} variants ({format_percent(row["variant_share"])})'
 
     col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Efekt size -10%", f'-{format_number(sim["reduced_returns"])} zwrotów', f'-{abs(sim["return_rate_delta"]):.1f} p.p.'.replace(".", ","))
-    col_b.metric("Pareto 80% zwrotów", pareto_text)
-    col_c.metric("Action list", f'{format_number(len(actions))} wariantów', "min. 30 sold")
+    col_a.metric("Size effect -10%", f'-{format_number(sim["reduced_returns"])} returns', f'-{abs(sim["return_rate_delta"]):.1f} p.p.')
+    col_b.metric("Pareto 80% of returns", pareto_text)
+    col_c.metric("Action list", f'{format_number(len(actions))} variants', "min. 30 sold")
 
     left, right = st.columns(2)
     with left:
@@ -811,7 +811,7 @@ def render_executive_summary(df: pd.DataFrame) -> None:
     with right:
         st.plotly_chart(country_bar(cached_aggregate_by(df, "Country").head(14)), width="stretch")
 
-    with st.expander("Szczegóły: top action list", expanded=False):
+    with st.expander("Details: top action list", expanded=False):
         st.dataframe(
             with_variant_links(actions.head(50)),
             width="stretch",
@@ -822,15 +822,15 @@ def render_executive_summary(df: pd.DataFrame) -> None:
 
 def action_column_config() -> dict:
     return {
-        "priority": st.column_config.TextColumn("priority", help="High = najwyższy priorytet w aktualnym zestawie."),
-        "problem_type": st.column_config.TextColumn("problem type", help="Typ problemu wywnioskowany z dominującego powodu zwrotu."),
-        "confidence": st.column_config.TextColumn("confidence", help="Ostrożnie = niski wolumen lub niestabilny status."),
-        "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f", help="Zwroty / sprzedaż * 100."),
+        "priority": st.column_config.TextColumn("priority", help="High = highest priority in the current dataset."),
+        "problem_type": st.column_config.TextColumn("problem type", help="Problem type inferred from the dominant return reason."),
+        "confidence": st.column_config.TextColumn("confidence", help="Use caution = low volume or unstable status."),
+        "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f", help="Returns / sales * 100."),
         "category_return_rate": st.column_config.NumberColumn("category RR (%)", format="%.1f"),
         "gap_vs_category": st.column_config.NumberColumn("gap vs category", format="%.1f"),
         "dominant_reason_returns": st.column_config.NumberColumn("dominant reason returns", format="%.0f"),
         "dominant_reason_share": st.column_config.NumberColumn("dominant reason share (%)", format="%.1f"),
-        "priority_score": st.column_config.NumberColumn("priority score", format="%.0f", help="Wolumen nadwyżkowych zwrotów + siła dominującego powodu + gap vs kategoria."),
+        "priority_score": st.column_config.NumberColumn("priority score", format="%.0f", help="Excess return volume + dominant reason strength + gap vs category."),
     }
 
 
@@ -905,7 +905,7 @@ def add_variants_to_watchlist(actions: pd.DataFrame, variants: list[str]) -> int
 def render_watchlist_editor() -> None:
     watchlist = get_watchlist()
     if watchlist.empty:
-        st.info("Watchlista jest pusta. Dodaj warianty z widoku Action list.")
+        st.info("The watchlist is empty. Add variants from the Action list view.")
         return
 
     edited = st.data_editor(
@@ -922,7 +922,7 @@ def render_watchlist_editor() -> None:
     save_watchlist(edited)
 
     st.download_button(
-        "Pobierz watchlistę CSV",
+        "Download watchlist CSV",
         data=dataframe_to_csv_bytes(get_watchlist()),
         file_name=f"returns_watchlist_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
@@ -932,8 +932,8 @@ def render_watchlist_editor() -> None:
 
 def render_overview(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać Overview",
-        "Ten widok odpowiada na pytanie: gdzie jest największy wolumen zwrotów i które przekroje mają najwyższy return rate. Bubble chart pokazuje relację wolumenu sprzedaży do return rate.",
+        "How to read Overview",
+        "This view answers where the highest return volume appears and which dimensions have the highest return rate. The bubble chart shows the relationship between sales volume and return rate.",
     )
     reason_df = cached_reason_summary(df)
     countries = cached_aggregate_by(df, "Country").head(14)
@@ -948,17 +948,17 @@ def render_overview(df: pd.DataFrame) -> None:
 
     left, right = st.columns((1, 1))
     with left:
-        st.plotly_chart(return_rate_scatter(article_types, "Article type", "Return rate vs wolumen: typ artykułu"), width="stretch")
+        st.plotly_chart(return_rate_scatter(article_types, "Article type", "Return rate vs volume: article type"), width="stretch")
     with right:
         st.plotly_chart(treemap(category_type), width="stretch")
 
 
 def render_reasons(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać powody zwrotów",
-        "Powody są liczone jako estymowane sztuki: Returned articles * reason %. To lepsze niż porównywanie samych procentów, bo uwzględnia skalę problemu.",
+        "How to read return reasons",
+        "Reasons are counted as estimated items: Returned articles * reason %. This is better than comparing percentages alone because it accounts for the scale of the problem.",
     )
-    dimension = st.selectbox("Przekrój analizy powodów", ["Country", "Article type", "Category", "Season", "Gender"], index=0)
+    dimension = st.selectbox("Return reason analysis dimension", ["Country", "Article type", "Category", "Season", "Gender"], index=0)
     reason_dim = cached_reason_by_dimension(df, dimension)
 
     left, right = st.columns((1, 1))
@@ -967,7 +967,7 @@ def render_reasons(df: pd.DataFrame) -> None:
     with right:
         st.plotly_chart(reason_heatmap(reason_dim, dimension), width="stretch")
 
-    with st.expander("Szczegóły: tabela powodów", expanded=False):
+    with st.expander("Details: reasons table", expanded=False):
         pivot = (
             reason_dim.pivot_table(index=dimension, columns="reason", values="estimated_returns", aggfunc="sum")
             .fillna(0)
@@ -980,14 +980,14 @@ def render_reasons(df: pd.DataFrame) -> None:
 def render_size(df: pd.DataFrame) -> None:
     required = {"Estimated returns - Item is too big", "Estimated returns - Item is too small"}
     if not required.issubset(df.columns):
-        st.info("W danych nie znaleziono kompletu kolumn rozmiarowych.")
+        st.info("The data does not contain the full set of sizing columns.")
         return
 
     render_guidance(
-        "Jak czytać rozmiarówkę",
-        "Przewaga 'too small' sugeruje zaniżoną rozmiarówkę lub za słaby opis fitu. Przewaga 'too big' sugeruje zawyżoną rozmiarówkę albo niejasną komunikację kroju.",
+        "How to read sizing",
+        "A 'too small' skew suggests undersized sizing or weak fit communication. A 'too big' skew suggests oversized sizing or unclear cut communication.",
     )
-    dimension = st.selectbox("Przekrój problemów rozmiarowych", ["Article type", "Country", "Category", "Gender", "Season"])
+    dimension = st.selectbox("Sizing issue dimension", ["Article type", "Country", "Category", "Gender", "Season"])
     st.plotly_chart(size_reason_chart(df, dimension), width="stretch")
 
     ranking = cached_product_ranking(df, min_sold=10).copy()
@@ -997,7 +997,7 @@ def render_size(df: pd.DataFrame) -> None:
     ).reindex(ranking["Article variant"]).values
     ranking = ranking.sort_values("estimated_size_returns", ascending=False).head(80)
 
-    with st.expander("Szczegóły: produkty z problemem rozmiarowym", expanded=False):
+    with st.expander("Details: products with sizing issues", expanded=False):
         display = with_variant_links(ranking[[
             "Article variant", "Zalando article variant", "Category", "Article type", "sold", "returned", "return_rate", "estimated_size_returns"
         ]])
@@ -1013,11 +1013,11 @@ def render_size(df: pd.DataFrame) -> None:
 
 
 def render_products(df: pd.DataFrame) -> None:
-    min_sold = st.slider("Minimalna sprzedaż wariantu", 1, 500, 30)
+    min_sold = st.slider("Minimum variant sales", 1, 500, 30)
     ranking = cached_product_ranking(df, min_sold=min_sold).head(250)
-    plot_variant_chart(return_rate_scatter(ranking.head(80), "Article variant", "Warianty: return rate vs wolumen zwrotów"), key="products_variant_scatter")
+    plot_variant_chart(return_rate_scatter(ranking.head(80), "Article variant", "Variants: return rate vs return volume"), key="products_variant_scatter")
 
-    with st.expander("Szczegóły: ranking wariantów", expanded=False):
+    with st.expander("Details: variant ranking", expanded=False):
         st.dataframe(
             with_variant_links(ranking),
             width="stretch",
@@ -1034,40 +1034,40 @@ def render_products(df: pd.DataFrame) -> None:
 
 def render_action_list(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać Action list",
-        "To centrum decyzyjne aplikacji. Priorytet łączy wolumen zwrotów, odchylenie od kategorii i siłę dominującego powodu. Kliknij wariant w tabeli lub punkt na wykresie, aby przejść do analizy wariantu.",
+        "How to read Action list",
+        "This is the app's decision center. Priority combines return volume, deviation from category, and the strength of the dominant reason. Click a variant in the table or a point on the chart to open the variant analysis.",
     )
-    min_sold = st.slider("Minimalna sprzedaż do action list", 1, 500, 30)
+    min_sold = st.slider("Minimum sales for action list", 1, 500, 30)
     actions = enrich_actions(cached_action_list(df, min_sold=min_sold))
     if actions.empty:
-        st.info("Brak produktów spełniających warunek minimalnej sprzedaży.")
+        st.info("No products meet the minimum sales threshold.")
         return
 
     render_top_action_cards(actions)
     plot_variant_chart(action_list_chart(actions), key="action_list_variant_scatter")
 
-    with st.expander("Dodaj do watchlisty", expanded=False):
+    with st.expander("Add to watchlist", expanded=False):
         selected_for_watchlist = st.multiselect(
-            "Warianty do obserwacji",
+            "Variants to track",
             options=actions["Article variant"].astype(str).head(200).tolist(),
-            placeholder="Wybierz warianty z action list...",
+            placeholder="Select variants from the action list...",
         )
-        if st.button("Dodaj wybrane warianty", width="stretch"):
+        if st.button("Add selected variants", width="stretch"):
             added = add_variants_to_watchlist(actions, selected_for_watchlist)
             if added:
-                st.success(f"Dodano {added} wariantów do watchlisty.")
+                st.success(f"Added {added} variants to the watchlist.")
             else:
-                st.info("Nie dodano nowych wariantów.")
+                st.info("No new variants were added.")
 
     st.download_button(
-        "Pobierz action list CSV",
+        "Download action list CSV",
         data=dataframe_to_csv_bytes(actions),
         file_name=f"returns_action_list_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
         width="stretch",
     )
 
-    with st.expander("Szczegóły: pełna action list", expanded=True):
+    with st.expander("Details: full action list", expanded=True):
         st.dataframe(
             with_variant_links(actions.head(200)),
             width="stretch",
@@ -1078,8 +1078,8 @@ def render_action_list(df: pd.DataFrame) -> None:
 
 def render_watchlist(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać watchlistę",
-        "Watchlista jest roboczym trackerem wariantów wymagających decyzji. Status, właściciel, termin i notatki są przechowywane w bieżącej sesji aplikacji.",
+        "How to read the watchlist",
+        "The watchlist is a working tracker for variants that need a decision. Status, owner, due date, and notes are stored in the current app session.",
     )
     watchlist = get_watchlist()
     if not watchlist.empty:
@@ -1092,26 +1092,26 @@ def render_watchlist(df: pd.DataFrame) -> None:
 
 def render_anomalies(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać anomalie",
-        "Widok wyłapuje warianty odstające od kategorii lub całego datasetu, z dużym wolumenem zwrotów albo silną koncentracją jednego powodu. Niestabilne dane obniżają score, ale nadal są widoczne jako flaga.",
+        "How to read anomalies",
+        "This view detects variants that stand out from the category or full dataset, have high return volume, or show a strong concentration in one reason. Unstable data lowers the score but remains visible as a flag.",
     )
-    min_sold = st.slider("Minimalna sprzedaż do wykrywania anomalii", 1, 500, 30)
+    min_sold = st.slider("Minimum sales for anomaly detection", 1, 500, 30)
     anomalies = cached_product_anomalies(df, min_sold=min_sold)
     if anomalies.empty:
-        st.info("Brak anomalii dla aktualnych filtrów i progu sprzedaży.")
+        st.info("No anomalies for the current filters and sales threshold.")
         return
 
     col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Anomalie", format_number(len(anomalies)))
-    col_b.metric("Zwroty w anomaliach", format_number(anomalies["returned"].sum()))
-    col_c.metric("Śr. gap vs category", format_pp(anomalies["gap_vs_category"].mean()))
+    col_a.metric("Anomalies", format_number(len(anomalies)))
+    col_b.metric("Returns in anomalies", format_number(anomalies["returned"].sum()))
+    col_c.metric("Avg. gap vs category", format_pp(anomalies["gap_vs_category"].mean()))
 
     plot_variant_chart(
-        return_rate_scatter(anomalies.head(80), "Article variant", "Anomalie: return rate vs wolumen"),
+        return_rate_scatter(anomalies.head(80), "Article variant", "Anomalies: return rate vs volume"),
         key="anomalies_variant_scatter",
     )
     st.download_button(
-        "Pobierz anomalie CSV",
+        "Download anomalies CSV",
         data=dataframe_to_csv_bytes(anomalies),
         file_name=f"returns_anomalies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
@@ -1135,26 +1135,26 @@ def render_anomalies(df: pd.DataFrame) -> None:
 
 def render_benchmarks(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać benchmarki",
-        "Gap dodatni oznacza, że wariant ma wyższy return rate niz benchmark. Najbardziej podejrzane są warianty z wysokim gapem i dużym wolumenem zwrotów.",
+        "How to read benchmarks",
+        "A positive gap means the variant has a higher return rate than the benchmark. Variants with a high gap and high return volume are the most suspicious.",
     )
-    min_sold = st.slider("Minimalna sprzedaż do benchmarkow", 1, 500, 30)
+    min_sold = st.slider("Minimum sales for benchmarks", 1, 500, 30)
     products = cached_benchmark_products(df, min_sold=min_sold)
     if products.empty:
-        st.info("Brak produktów spełniających warunek minimalnej sprzedaży.")
+        st.info("No products meet the minimum sales threshold.")
         return
 
     gap_col = st.radio(
-        "Benchmark produktu",
+        "Product benchmark",
         ["gap_vs_category", "gap_vs_type", "gap_vs_dataset"],
         horizontal=True,
-        format_func={"gap_vs_category": "vs kategoria", "gap_vs_type": "vs typ artykułu", "gap_vs_dataset": "vs całość"}.get,
+        format_func={"gap_vs_category": "vs category", "gap_vs_type": "vs article type", "gap_vs_dataset": "vs full dataset"}.get,
     )
     plot_variant_chart(benchmark_gap_chart(products, gap_col), key=f"benchmark_{gap_col}")
 
     col_a, col_b = st.columns(2)
     with col_a:
-        dimension = st.selectbox("Benchmark wymiaru", ["Country", "Category", "Article type", "Season"])
+        dimension = st.selectbox("Dimension benchmark", ["Country", "Category", "Article type", "Season"])
         dim_df = cached_aggregate_by(df, dimension)
         dim_df["gap_vs_dataset"] = dim_df["return_rate"] - cached_kpi_summary(df)["return_rate"]
         st.dataframe(
@@ -1185,24 +1185,24 @@ def mode_value(df: pd.DataFrame, column: str) -> str:
 def render_product_profile(df: pd.DataFrame) -> None:
     variants = cached_unique_values(df, "Article variant")
     if not variants:
-        st.info("Brak wariantów w aktualnym filtrze.")
+        st.info("No variants in the current filter.")
         return
-    selected = st.selectbox("Wybierz Article variant", variants)
-    st.link_button("Otwórz jako stronę wariantu", variant_url(selected), width="stretch")
+    selected = st.selectbox("Select Article variant", variants)
+    st.link_button("Open as variant page", variant_url(selected), width="stretch")
     render_variant_analysis(df, selected, full_page=False)
 
 
 def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: bool) -> None:
     profile = cached_product_profile(df, article_variant)
     if not profile:
-        st.error(f"Nie znaleziono wariantu: {article_variant}")
+        st.error(f"Variant not found: {article_variant}")
         return
 
     summary = profile["summary"]
     raw = profile["raw"]
     if full_page:
-        st.link_button("Wróć do dashboardu", "./", width="content")
-        render_hero(article_variant, "Mini-raport wariantu: KPI, benchmarki, powody zwrotów, kraje, sezony i dane źródłowe.")
+        st.link_button("Back to dashboard", "./", width="content")
+        render_hero(article_variant, "Variant mini-report: KPIs, benchmarks, return reasons, countries, seasons, and source data.")
 
     meta = f'{mode_value(raw, "Category")} | {mode_value(raw, "Article type")} | {mode_value(raw, "Gender")} | {mode_value(raw, "Season")}'
     st.markdown(f'<div class="context-bar"><span class="context-pill">{html.escape(meta)}</span></div>', unsafe_allow_html=True)
@@ -1214,11 +1214,11 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
     col_d.metric("Vs category", format_pp(summary["return_rate"] - summary["category_return_rate"]))
     col_e.metric("Vs dataset", format_pp(summary["return_rate"] - summary["dataset_return_rate"]))
 
-    st.info(f"Dominujący powód: {summary['dominant_reason']} | Rekomendacja: {summary['recommended_action']}")
+    st.info(f"Dominant reason: {summary['dominant_reason']} | Recommendation: {summary['recommended_action']}")
     col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Udział dominującego powodu", format_percent(summary["dominant_reason_share"]))
-    col_b.metric("Est. zwroty dominującego powodu", format_number(summary["dominant_reason_returns"]))
-    col_c.metric("Balans rozmiarówki", format_pp(summary["size_balance"]))
+    col_a.metric("Dominant reason share", format_percent(summary["dominant_reason_share"]))
+    col_b.metric("Est. dominant reason returns", format_number(summary["dominant_reason_returns"]))
+    col_c.metric("Sizing balance", format_pp(summary["size_balance"]))
 
     if full_page:
         variant_key = encode_variant_key(article_variant)
@@ -1226,8 +1226,8 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
             raw,
             key=f"variant_{variant_key}",
             filename_prefix=f"variant_{variant_key}",
-            generate_label="Generuj PDF wariantu",
-            download_label="Pobierz PDF wariantu",
+            generate_label="Generate variant PDF",
+            download_label="Download variant PDF",
         )
 
     left, right = st.columns(2)
@@ -1238,7 +1238,7 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
 
     left, right = st.columns(2)
     with left:
-        st.markdown('<div class="section-title">Benchmarki</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Benchmarks</div>', unsafe_allow_html=True)
         benchmark_rows = pd.DataFrame([
             {"benchmark": "Variant", "return_rate": summary["return_rate"]},
             {"benchmark": "Category", "return_rate": summary["category_return_rate"]},
@@ -1252,7 +1252,7 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
             column_config={"return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f")},
         )
     with right:
-        st.markdown('<div class="section-title">Sezony wariantu</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Variant seasons</div>', unsafe_allow_html=True)
         st.dataframe(
             profile["seasons"],
             width="stretch",
@@ -1262,7 +1262,7 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
 
     left, right = st.columns(2)
     with left:
-        st.markdown('<div class="section-title">Powody vs kategoria</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Reasons vs category</div>', unsafe_allow_html=True)
         st.dataframe(
             profile["reason_gap_vs_category"].head(10),
             width="stretch",
@@ -1275,10 +1275,10 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
             },
         )
     with right:
-        st.markdown('<div class="section-title">Podobne lepsze warianty</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Similar better variants</div>', unsafe_allow_html=True)
         similar = profile["similar_products"]
         if similar.empty:
-            st.info("Brak podobnych wariantów z niższym return rate w aktualnym zakresie danych.")
+            st.info("No similar variants with a lower return rate in the current data range.")
         else:
             st.dataframe(
                 with_variant_links(similar),
@@ -1293,7 +1293,7 @@ def render_variant_analysis(df: pd.DataFrame, article_variant: str, full_page: b
                 ),
             )
 
-    with st.expander("Dane źródłowe wariantu", expanded=full_page):
+    with st.expander("Variant source data", expanded=full_page):
         raw_columns = [
             "Article variant", "Zalando article variant", "Country", "Category", "Article type", "Season",
             "Sold articles", "Returned articles", "Return rate (%)", "Estimated return rate status", "Size-related return rate (%)",
@@ -1313,13 +1313,13 @@ def render_variant_page(df: pd.DataFrame, article_variant: str) -> None:
 
 def render_segmentation(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać segmentację",
-        "Linie przerywane dzielą warianty według mediany sprzedaży i ważonego return rate. Najważniejszy segment to high volume / high returns.",
+        "How to read segmentation",
+        "Dashed lines split variants by median sales and weighted return rate. The key segment is high volume / high returns.",
     )
-    min_sold = st.slider("Minimalna sprzedaż do segmentacji", 1, 500, 10)
+    min_sold = st.slider("Minimum sales for segmentation", 1, 500, 10)
     segments = cached_product_segments(df, min_sold=min_sold)
     if segments.empty:
-        st.info("Brak produktów spełniających warunek minimalnej sprzedaży.")
+        st.info("No products meet the minimum sales threshold.")
         return
     plot_variant_chart(segmentation_chart(segments), key="segmentation_variant_scatter")
 
@@ -1336,7 +1336,7 @@ def render_segmentation(df: pd.DataFrame) -> None:
         column_config={"return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f")},
     )
 
-    with st.expander("Szczegóły: warianty w segmentach", expanded=False):
+    with st.expander("Details: variants in segments", expanded=False):
         st.dataframe(
             with_variant_links(segments.sort_values(["segment", "returned"], ascending=[True, False]).head(250)),
             width="stretch",
@@ -1347,8 +1347,8 @@ def render_segmentation(df: pd.DataFrame) -> None:
 
 def render_pareto(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać Pareto",
-        "Pareto pokazuje, czy problem zwrotów jest skupiony w małej grupie wariantów. Im mniej wariantów pokrywa 80% zwrotów, tym bardziej opłaca się priorytetyzować konkretne produkty.",
+        "How to read Pareto",
+        "Pareto shows whether the returns problem is concentrated in a small group of variants. The fewer variants cover 80% of returns, the more worthwhile it is to prioritize specific products.",
     )
     pareto = cached_pareto_products(df)
     st.plotly_chart(pareto_chart(pareto), width="stretch")
@@ -1358,38 +1358,38 @@ def render_pareto(df: pd.DataFrame) -> None:
         width="stretch",
         hide_index=True,
         column_config={
-            "variant_share": st.column_config.NumberColumn("udział wariantów (%)", format="%.1f"),
-            "returns_covered": st.column_config.NumberColumn("pokryte zwroty", format="%.0f"),
+            "variant_share": st.column_config.NumberColumn("variant share (%)", format="%.1f"),
+            "returns_covered": st.column_config.NumberColumn("returns covered", format="%.0f"),
         },
     )
-    with st.expander("Szczegóły: top warianty w Pareto", expanded=False):
+    with st.expander("Details: top Pareto variants", expanded=False):
         st.dataframe(
             with_variant_links(pareto.head(100)),
             width="stretch",
             hide_index=True,
             column_config=variant_column_config({
                 "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f"),
-                "cumulative_return_share": st.column_config.NumberColumn("skumulowany udział zwrotów (%)", format="%.1f"),
-                "cumulative_variant_share": st.column_config.NumberColumn("skumulowany udział wariantów (%)", format="%.1f"),
+                "cumulative_return_share": st.column_config.NumberColumn("cumulative return share (%)", format="%.1f"),
+                "cumulative_variant_share": st.column_config.NumberColumn("cumulative variant share (%)", format="%.1f"),
             }),
         )
 
 
 def render_quality(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać jakość danych",
-        "Niski wolumen i niestabilny status nie oznaczają, że produkt nie ma problemu. Oznaczają, że decyzje trzeba potwierdzić dodatkowymi danymi.",
+        "How to read data quality",
+        "Low volume and unstable status do not mean the product has no problem. They mean decisions should be confirmed with additional data.",
     )
     validation_summary, validation_issues = cached_validation_report(df)
-    st.markdown('<div class="section-title">Walidacja importu</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Import validation</div>', unsafe_allow_html=True)
     if validation_issues.empty:
-        st.success("Nie znaleziono problemów walidacyjnych w aktualnym zestawie danych.")
+        st.success("No validation issues found in the current dataset.")
     else:
         col_a, col_b, col_c = st.columns(3)
         severity_counts = validation_issues["severity"].value_counts()
-        col_a.metric("Błędy", format_number(severity_counts.get("Error", 0)))
-        col_b.metric("Ostrzeżenia", format_number(severity_counts.get("Warning", 0)))
-        col_c.metric("Informacje", format_number(severity_counts.get("Info", 0)))
+        col_a.metric("Errors", format_number(severity_counts.get("Error", 0)))
+        col_b.metric("Warnings", format_number(severity_counts.get("Warning", 0)))
+        col_c.metric("Info", format_number(severity_counts.get("Info", 0)))
         st.dataframe(
             validation_issues,
             width="stretch",
@@ -1397,10 +1397,10 @@ def render_quality(df: pd.DataFrame) -> None:
             column_config={"share": st.column_config.NumberColumn("share (%)", format="%.1f")},
         )
 
-    st.markdown('<div class="section-title">Ryzyka jakości danych</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Data quality risks</div>', unsafe_allow_html=True)
     summary, risky_rows = cached_data_quality_report(df)
     st.plotly_chart(quality_bar(summary), width="stretch")
-    with st.expander("Szczegóły: wiersze wymagające ostrożności", expanded=False):
+    with st.expander("Details: rows requiring caution", expanded=False):
         columns = [
             "Article variant", "Country", "Category", "Article type", "Sold articles", "Returned articles",
             "Return rate (%)", "Estimated return rate status", "Size-related return rate status", "low_volume", "unstable_status",
@@ -1417,7 +1417,7 @@ def render_quality(df: pd.DataFrame) -> None:
 def render_seasons(df: pd.DataFrame) -> None:
     season_df = cached_season_article_type_analysis(df)
     st.plotly_chart(season_heatmap(season_df), width="stretch")
-    with st.expander("Szczegóły: sezony i typy artykułów", expanded=False):
+    with st.expander("Details: seasons and article types", expanded=False):
         st.dataframe(
             season_df.sort_values("returned", ascending=False),
             width="stretch",
@@ -1428,24 +1428,24 @@ def render_seasons(df: pd.DataFrame) -> None:
 
 def render_simulation(df: pd.DataFrame) -> None:
     render_guidance(
-        "Jak czytać symulację",
-        "Symulacja pokazuje potencjalny efekt, gdyby udało się ograniczyć wybrane powody zwrotów o zadany procent. To szacunek kierunkowy, nie prognoza finansowa.",
+        "How to read simulation",
+        "The simulation shows the potential effect of reducing selected return reasons by a chosen percentage. It is a directional estimate, not a financial forecast.",
     )
     reason_options = cached_reason_summary(df)["reason"].tolist()
     default_reasons = [reason for reason in ["Item is too small", "Item is too big"] if reason in reason_options]
-    selected_reasons = st.multiselect("Powody objęte redukcją", options=reason_options, default=default_reasons or reason_options[:1])
-    reduction_pct = st.slider("Zakładana redukcja wybranych powodów", 0, 80, 10, step=5)
+    selected_reasons = st.multiselect("Reasons to reduce", options=reason_options, default=default_reasons or reason_options[:1])
+    reduction_pct = st.slider("Assumed reduction of selected reasons", 0, 80, 10, step=5)
     result = cached_simulate_reason_reduction(df, tuple(selected_reasons), reduction_pct)
 
     col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Obecny return rate", format_percent(result["current_return_rate"]))
-    col_b.metric("Po symulacji", format_percent(result["new_return_rate"]))
-    col_c.metric("Zmiana", f'-{abs(result["return_rate_delta"]):.1f} p.p.'.replace(".", ","))
+    col_a.metric("Current return rate", format_percent(result["current_return_rate"]))
+    col_b.metric("After simulation", format_percent(result["new_return_rate"]))
+    col_c.metric("Change", f'-{abs(result["return_rate_delta"]):.1f} p.p.')
     st.plotly_chart(simulation_chart(result), width="stretch")
 
 
 def render_data(df: pd.DataFrame) -> None:
-    st.markdown('<div class="section-title">Dane po filtrach</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Filtered data</div>', unsafe_allow_html=True)
     visible_columns = [
         "Article variant", "Zalando article variant", "Brand", "Country", "Category", "Article type", "Season",
         "Sold articles", "Returned articles", "Return rate (%)", "Estimated return rate status", "Size-related return rate (%)",
@@ -1453,7 +1453,7 @@ def render_data(df: pd.DataFrame) -> None:
     visible_columns = [column for column in visible_columns if column in df.columns]
     visible_df = df[visible_columns].copy()
     st.download_button(
-        "Pobierz pełne dane CSV",
+        "Download full data CSV",
         data=dataframe_to_csv_bytes(visible_df),
         file_name=f"returns_filtered_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
@@ -1461,8 +1461,8 @@ def render_data(df: pd.DataFrame) -> None:
     )
     if len(visible_df) > TABLE_PREVIEW_ROWS:
         st.caption(
-            f"Podgląd pokazuje pierwsze {TABLE_PREVIEW_ROWS} z {len(visible_df)} wierszy. "
-            "Pełny wynik pobierzesz jako CSV."
+            f"Preview shows the first {TABLE_PREVIEW_ROWS} of {len(visible_df)} rows. "
+            "Download the full result as CSV."
         )
     st.dataframe(
         with_variant_links(visible_df.head(TABLE_PREVIEW_ROWS)),
@@ -1479,29 +1479,29 @@ def render_selected_view(view: str, df: pd.DataFrame) -> None:
         render_overview(df)
     elif view == "Action list":
         render_action_list(df)
-    elif view == "Watchlista":
+    elif view == "Watchlist":
         render_watchlist(df)
-    elif view == "Anomalie":
+    elif view == "Anomalies":
         render_anomalies(df)
-    elif view == "Benchmarki":
+    elif view == "Benchmarks":
         render_benchmarks(df)
-    elif view == "Profil produktu":
+    elif view == "Product profile":
         render_product_profile(df)
-    elif view == "Powody zwrotów":
+    elif view == "Return reasons":
         render_reasons(df)
-    elif view == "Rozmiarówka":
+    elif view == "Sizing":
         render_size(df)
-    elif view == "Segmentacja":
+    elif view == "Segmentation":
         render_segmentation(df)
     elif view == "Pareto":
         render_pareto(df)
-    elif view == "Jakość danych":
+    elif view == "Data quality":
         render_quality(df)
-    elif view == "Sezony":
+    elif view == "Seasons":
         render_seasons(df)
-    elif view == "Symulacja":
+    elif view == "Simulation":
         render_simulation(df)
-    elif view == "Produkty":
+    elif view == "Products":
         render_products(df)
     else:
         render_data(df)
@@ -1522,11 +1522,11 @@ def main() -> None:
     filtered, active_filters = apply_filters(df)
     render_hero(
         "Returns Analysis",
-        "Panel do wykrywania, gdzie powstają zwroty, jakie powody dominują i które warianty wymagają działania.",
+        "A dashboard for finding where returns happen, which reasons dominate, and which variants need action.",
     )
 
     if filtered.empty:
-        st.warning("Brak danych dla wybranych filtrów.")
+        st.warning("No data for the selected filters.")
         st.stop()
 
     render_filter_context(filtered, active_filters)

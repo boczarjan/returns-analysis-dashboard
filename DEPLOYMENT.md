@@ -1,10 +1,10 @@
-# Publikacja aplikacji
+# App Deployment
 
-Ten projekt jest aplikacją Streamlit. Repozytorium GitHub przechowuje kod, a sama aplikacja musi działać na hostingu obsługującym proces Pythona.
+This project is a Streamlit app. The GitHub repository stores the code, while the app itself must run on hosting that supports a Python process.
 
 ## GitHub
 
-Jeśli projekt nie jest jeszcze repozytorium Git:
+If the project is not yet a Git repository:
 
 ```powershell
 git init -b main
@@ -12,39 +12,39 @@ git add .
 git commit -m "Initial returns dashboard"
 ```
 
-Następnie utwórz puste repozytorium na GitHubie i podłącz je lokalnie:
+Then create an empty repository on GitHub and connect it locally:
 
 ```powershell
-git remote add origin https://github.com/TWOJ_LOGIN/returns-analysis-dashboard.git
+git remote add origin https://github.com/YOUR_LOGIN/returns-analysis-dashboard.git
 git push -u origin main
 ```
 
 ## Streamlit Community Cloud
 
-To najprostszy hosting dla tej aplikacji.
+This is the simplest hosting option for this app.
 
-1. Wejdź na https://streamlit.io/cloud.
-2. Zaloguj się kontem GitHub.
-3. Kliknij `New app`.
-4. Wybierz repozytorium.
-5. Jako `Main file path` ustaw `app.py`.
-6. Kliknij `Deploy`.
+1. Go to https://streamlit.io/cloud.
+2. Sign in with GitHub.
+3. Click `New app`.
+4. Select the repository.
+5. Set `Main file path` to `app.py`.
+6. Click `Deploy`.
 
-Po wdrożeniu użytkownik może wgrać CSV przez panel boczny aplikacji. Nie trzeba dodawać pliku CSV do repozytorium.
+After deployment, users can upload a CSV through the app sidebar. You do not need to add the CSV file to the repository.
 
-## Render, Railway albo VPS
+## Render, Railway, or VPS
 
-Na hostingu, który uruchamia proces Pythona, użyj komendy startowej:
+On hosting that starts a Python process, use this start command:
 
 ```bash
 streamlit run app.py --server.port $PORT --server.address 0.0.0.0
 ```
 
-Jeżeli hosting nie ustawia zmiennej `$PORT`, użyj na przykład portu `8501`.
+If the hosting platform does not set `$PORT`, use a port such as `8501`.
 
-## Dane i sekrety
+## Data and Secrets
 
-- Nie wrzucaj prawdziwych plików CSV do publicznego repozytorium.
-- Lokalny folder `data/` jest ignorowany przez Git poza plikiem `.gitkeep`.
-- Cache `.returns_cache/`, logi i `.streamlit/secrets.toml` są ignorowane.
-- Jeśli chcesz wskazać plik danych bez uploadu, ustaw zmienną środowiskową `RETURNS_CSV_PATH`.
+- Do not commit real CSV files to a public repository.
+- The local `data/` folder is ignored by Git except for `.gitkeep`.
+- `.returns_cache/`, logs, and `.streamlit/secrets.toml` are ignored.
+- To point the app to a data file without upload, set the `RETURNS_CSV_PATH` environment variable.

@@ -17,7 +17,16 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .data_loader import validate_returns_data
-from .deep_analysis import action_list, detect_product_anomalies, pareto_breakpoints, pareto_products
+from .deep_analysis import (
+    action_list,
+    country_report,
+    detect_product_anomalies,
+    new_product_early_warning,
+    pareto_breakpoints,
+    pareto_products,
+    pricing_risk_report,
+    quality_supplier_report,
+)
 from .metrics import aggregate_by, kpi_summary, product_ranking, reason_summary
 
 
@@ -256,6 +265,106 @@ def build_pdf_report(df: pd.DataFrame) -> bytes:
             _table(
                 anomaly_rows,
                 [4.2 * cm, 8 * cm, 2.2 * cm, 2.5 * cm, 2.2 * cm, 2.8 * cm],
+                styles["Cell"],
+                styles["Header"],
+            )
+        )
+
+    new_warnings = new_product_early_warning(df, max_days_online=90, min_sold=10, min_returned=2).head(10)
+    if not new_warnings.empty:
+        warning_rows = [["Article variant", "Days", "Returned", "RR", "Gap vs category", "Reason", "Priority"]]
+        for row in new_warnings.itertuples(index=False):
+            warning_rows.append(
+                [
+                    row[0],
+                    _fmt_number(row.days_online),
+                    _fmt_number(row.returned),
+                    _fmt_percent(row.return_rate),
+                    _fmt_percent(row.gap_vs_category),
+                    row.dominant_reason,
+                    row.early_warning_priority,
+                ]
+            )
+        story += _section("New product early warning", styles)
+        story.append(
+            _table(
+                warning_rows,
+                [4 * cm, 2 * cm, 2.4 * cm, 2.2 * cm, 3 * cm, 5 * cm, 2.4 * cm],
+                styles["Cell"],
+                styles["Header"],
+            )
+        )
+
+    pricing_risks = pricing_risk_report(df, min_sold=30, premium_threshold=110, return_gap_threshold=0).head(10)
+    if not pricing_risks.empty:
+        pricing_rows = [["Article variant", "Category", "Returned", "RR", "Price index", "Est. returned NMV", "Risk type"]]
+        for row in pricing_risks.itertuples(index=False):
+            pricing_rows.append(
+                [
+                    row[0],
+                    row.Category,
+                    _fmt_number(row.returned),
+                    _fmt_percent(row.return_rate),
+                    _fmt_percent(row.price_index_vs_category),
+                    _fmt_number(row.estimated_returned_nmv),
+                    row.risk_type,
+                ]
+            )
+        story += _section("Pricing risk report", styles)
+        story.append(
+            _table(
+                pricing_rows,
+                [4 * cm, 3.5 * cm, 2.4 * cm, 2.2 * cm, 2.8 * cm, 3.5 * cm, 6 * cm],
+                styles["Cell"],
+                styles["Header"],
+            )
+        )
+
+    countries_report = country_report(df).head(10)
+    if not countries_report.empty:
+        country_rows = [["Country", "Returned", "RR", "Gap", "Top reason", "Size balance", "Focus"]]
+        for row in countries_report.itertuples(index=False):
+            country_rows.append(
+                [
+                    row.Country,
+                    _fmt_number(row.returned),
+                    _fmt_percent(row.return_rate),
+                    _fmt_percent(row.gap_vs_dataset),
+                    row.top_reason,
+                    _fmt_percent(row.size_balance),
+                    row.recommended_focus,
+                ]
+            )
+        story += _section("Country report", styles)
+        story.append(
+            _table(
+                country_rows,
+                [2.7 * cm, 2.4 * cm, 2.2 * cm, 2.2 * cm, 4.4 * cm, 2.5 * cm, 8 * cm],
+                styles["Cell"],
+                styles["Header"],
+            )
+        )
+
+    quality_dimension = next((column for column in ["Supplier", "Brand", "Category", "Article type"] if column in df.columns), None)
+    quality_report = quality_supplier_report(df, quality_dimension).head(10) if quality_dimension else pd.DataFrame()
+    if not quality_report.empty:
+        quality_rows = [[quality_dimension, "Quality returns", "Share", "Top quality reason", "Risk score", "Action"]]
+        for row in quality_report.itertuples(index=False):
+            quality_rows.append(
+                [
+                    getattr(row, "_0", row[0]),
+                    _fmt_number(row.quality_returns),
+                    _fmt_percent(row.quality_share_of_returns),
+                    row.top_quality_reason,
+                    _fmt_number(row.risk_score),
+                    row.recommended_action,
+                ]
+            )
+        story += _section("Quality / supplier report", styles)
+        story.append(
+            _table(
+                quality_rows,
+                [4 * cm, 3 * cm, 2.4 * cm, 4.5 * cm, 2.5 * cm, 10 * cm],
                 styles["Cell"],
                 styles["Header"],
             )

@@ -7,9 +7,22 @@ Interactive Streamlit dashboard for browsing, filtering, and visualizing return 
 - KPIs: sales, returns, weighted return rate, simple average return rate, and NMV.
 - Interactive Plotly charts with hover details, zoom, and filtering.
 - Analysis of return reasons, countries, categories, article types, and seasons.
+- Product rankings for a selected return reason, with category and full-dataset benchmarks.
+- Pricing analysis with average net price, returned NMV, and high price / high return detection.
+- Optional sidebar switch to exclude the `No details` return reason and recalculate metrics without it.
+- `N/A` article variants are split by Zalando article variant instead of being grouped together.
 - Action list with priorities, problem type, and recommended action.
 - Variant benchmarks vs category, article type, and the full dataset.
 - Clickable `Article variant` codes that open a dedicated variant page.
+- Lifecycle and new product early warning reports using `Days online` or `Date first on offer`.
+- Country playbook with dominant reasons, size skew, risky variants, and recommended focus.
+- Size & fit intelligence with too-big / too-small skew and variant-level fit risk scoring.
+- Product page audit pack for PDP, fit, quality, price, fulfillment, and market checks.
+- Quality/Supplier, Country, Pricing risk, and New product early warning report views with CSV export.
+- Executive cockpit with top fixes, pricing risks, new product alerts, and narrative insight cards.
+- Analysis presets, resettable filters, data-retention context, and a higher-confidence filter.
+- Compare mode for countries, categories, article types, seasons, genders, and variants.
+- Risk-index columns and compact product audit layout for faster visual scanning.
 - Segmentation, Pareto, data quality analysis, and return reduction simulation.
 - PDF export for the currently filtered report and CSV export for tables.
 - Parquet cache and calculation cache for faster work on larger files.

@@ -11,13 +11,18 @@ import pandas as pd
 
 DEFAULT_CSV_PATH = Path(os.environ.get("RETURNS_CSV_PATH", "data/returns.csv"))
 
+ARTICLE_VARIANT_COLUMN = "Article variant"
+ZALANDO_ARTICLE_VARIANT_COLUMN = "Zalando article variant"
+NA_ARTICLE_VARIANT = "N/A"
 REASON_PREFIX = "Return reason: "
 REASON_SUFFIX = " (%)"
-CACHE_SCHEMA_VERSION = "v3"
+ESTIMATED_REASON_PREFIX = "Estimated returns - "
+NO_DETAILS_REASON = "No details"
+CACHE_SCHEMA_VERSION = "v4"
 CACHE_DIR = Path(__file__).resolve().parents[1] / ".returns_cache"
 
 REQUIRED_COLUMNS = [
-    "Article variant",
+    ARTICLE_VARIANT_COLUMN,
     "Sold articles",
     "Returned articles",
     "Return rate (%)",
@@ -30,7 +35,7 @@ OPTIONAL_ANALYSIS_COLUMNS = [
     "Article type",
     "Gender",
     "Season",
-    "Zalando article variant",
+    ZALANDO_ARTICLE_VARIANT_COLUMN,
     "Estimated return rate status",
     "Size-related return rate status",
     "Size-related return rate (%)",
@@ -53,6 +58,113 @@ def reason_columns(df: pd.DataFrame) -> list[str]:
 
 def clean_reason_name(column: str) -> str:
     return column.replace(REASON_PREFIX, "").replace(REASON_SUFFIX, "")
+
+
+def estimated_reason_column(reason: str) -> str:
+    return f"{ESTIMATED_REASON_PREFIX}{reason}"
+
+
+def find_reason_column(df: pd.DataFrame, reason: str) -> str | None:
+    wanted = str(reason).strip().casefold()
+    for column in reason_columns(df):
+        if clean_reason_name(column).strip().casefold() == wanted:
+            return column
+    return None
+
+
+def has_return_reason(df: pd.DataFrame, reason: str) -> bool:
+    return find_reason_column(df, reason) is not None
+
+
+def is_na_article_variant(value: object) -> bool:
+    return str(value).strip().casefold() == NA_ARTICLE_VARIANT.casefold()
+
+
+def disambiguate_na_article_variants(df: pd.DataFrame) -> pd.DataFrame:
+    if ARTICLE_VARIANT_COLUMN not in df.columns:
+        return df
+
+    na_mask = df[ARTICLE_VARIANT_COLUMN].map(is_na_article_variant)
+    if not na_mask.any():
+        return df
+
+    result = df.copy()
+    fallback = pd.Series([f"row {index + 1}" for index in range(len(result))], index=result.index)
+    if ZALANDO_ARTICLE_VARIANT_COLUMN in result.columns:
+        suffix = result[ZALANDO_ARTICLE_VARIANT_COLUMN].astype(str).str.strip()
+        suffix = suffix.where(suffix.ne("") & suffix.str.casefold().ne("unknown"), fallback)
+    else:
+        suffix = fallback
+
+    result.loc[na_mask, ARTICLE_VARIANT_COLUMN] = NA_ARTICLE_VARIANT + " (" + suffix[na_mask] + ")"
+    return result
+
+
+def exclude_return_reason(df: pd.DataFrame, reason: str = NO_DETAILS_REASON) -> pd.DataFrame:
+    reason_column = find_reason_column(df, reason)
+    if reason_column is None:
+        return df.copy()
+
+    excluded_reason = clean_reason_name(reason_column)
+    result = df.copy()
+    result.attrs.update(df.attrs)
+
+    old_returned = result["Returned articles"].fillna(0)
+    excluded_pct = result[reason_column].fillna(0).clip(lower=0, upper=100)
+    excluded_returns = old_returned * excluded_pct / 100
+    result["Returned articles"] = (old_returned - excluded_returns).clip(lower=0)
+
+    remaining_reason_columns = [column for column in reason_columns(result) if column != reason_column]
+    remaining_pct_sum = result[remaining_reason_columns].fillna(0).sum(axis=1) if remaining_reason_columns else 0
+    for column in remaining_reason_columns:
+        result[column] = np.where(
+            remaining_pct_sum > 0,
+            100 * result[column].fillna(0) / remaining_pct_sum,
+            0.0,
+        )
+
+    result = result.drop(
+        columns=[reason_column, estimated_reason_column(excluded_reason)],
+        errors="ignore",
+    )
+
+    for column in remaining_reason_columns:
+        if column in result.columns:
+            result[estimated_reason_column(clean_reason_name(column))] = (
+                result["Returned articles"].fillna(0) * result[column].fillna(0) / 100
+            )
+
+    if "Sold articles" in result.columns:
+        result["Return rate (%)"] = np.where(
+            result["Sold articles"].fillna(0) > 0,
+            100 * result["Returned articles"].fillna(0) / result["Sold articles"].fillna(0),
+            np.nan,
+        )
+        if "Weighted return rate (%)" in result.columns:
+            result["Weighted return rate (%)"] = result["Return rate (%)"]
+        if "Estimated return rate (%)" in result.columns:
+            result["Estimated return rate (%)"] = result["Return rate (%)"]
+
+    too_big_column = "Return reason: Item is too big (%)"
+    too_small_column = "Return reason: Item is too small (%)"
+    if {too_big_column, too_small_column}.issubset(result.columns):
+        result["Size reason share (%)"] = (
+            result[too_big_column].fillna(0) + result[too_small_column].fillna(0)
+        )
+
+    too_big_estimate = estimated_reason_column("Item is too big")
+    too_small_estimate = estimated_reason_column("Item is too small")
+    if {"Sold articles", too_big_estimate, too_small_estimate}.issubset(result.columns):
+        size_returns = result[too_big_estimate].fillna(0) + result[too_small_estimate].fillna(0)
+        result["Size-related return rate (%)"] = np.where(
+            result["Sold articles"].fillna(0) > 0,
+            100 * size_returns / result["Sold articles"].fillna(0),
+            np.nan,
+        )
+
+    result.attrs["excluded_return_reason"] = excluded_reason
+    result.attrs["excluded_return_reason_returns"] = float(excluded_returns.sum())
+    return result
 
 
 def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -140,7 +252,8 @@ def validate_returns_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
 
     if reason_cols:
         reason_sum = df[reason_cols].fillna(0).sum(axis=1)
-        reason_outside_range = (reason_sum < 95) | (reason_sum > 105)
+        returned = df["Returned articles"].fillna(0) if "Returned articles" in df.columns else pd.Series(0, index=df.index)
+        reason_outside_range = ((reason_sum < 95) | (reason_sum > 105)) & (returned > 0)
         count = int(reason_outside_range.sum())
         if count:
             issues.append(
@@ -260,5 +373,7 @@ def load_returns_csv(source: str | Path | BinaryIO) -> pd.DataFrame:
     text_columns = df.select_dtypes(include="object").columns
     for column in text_columns:
         df[column] = df[column].replace("", "Unknown")
+
+    df = disambiguate_na_article_variants(df)
 
     return df

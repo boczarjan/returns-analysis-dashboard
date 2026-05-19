@@ -9,10 +9,41 @@ from .metrics import aggregate_by, product_ranking, reason_summary, weighted_ret
 
 SIZE_TOO_BIG = "Estimated returns - Item is too big"
 SIZE_TOO_SMALL = "Estimated returns - Item is too small"
+QUALITY_REASON_KEYWORDS = (
+    "damaged",
+    "defect",
+    "fault",
+    "quality",
+    "wrong item",
+    "incomplete",
+    "missing",
+    "broken",
+    "stain",
+)
+
+
+def _empty(columns: list[str]) -> pd.DataFrame:
+    return pd.DataFrame(columns=columns)
 
 
 def _reason_estimate_columns(df: pd.DataFrame) -> list[str]:
     return [f"Estimated returns - {clean_reason_name(column)}" for column in reason_columns(df)]
+
+
+def _reason_estimate_column(df: pd.DataFrame, reason: str) -> str | None:
+    column = f"Estimated returns - {reason}"
+    return column if column in df.columns else None
+
+
+def _reason_estimate_columns_matching(df: pd.DataFrame, keywords: tuple[str, ...]) -> list[str]:
+    matches = []
+    for column in reason_columns(df):
+        reason = clean_reason_name(column)
+        if any(keyword in reason.lower() for keyword in keywords):
+            estimate = f"Estimated returns - {reason}"
+            if estimate in df.columns:
+                matches.append(estimate)
+    return matches
 
 
 def _dominant_reason(group: pd.DataFrame) -> tuple[str, float, float]:
@@ -25,6 +56,68 @@ def _dominant_reason(group: pd.DataFrame) -> tuple[str, float, float]:
     reason, estimated_returns = max(reason_totals.items(), key=lambda item: item[1])
     returned = group["Returned articles"].sum()
     return reason, float(estimated_returns), 100 * estimated_returns / returned if returned else 0.0
+
+
+def _dominant_estimated_reason(group: pd.DataFrame, estimate_columns: list[str]) -> tuple[str, float, float]:
+    if not estimate_columns:
+        return "Unknown", 0.0, 0.0
+    totals = group[estimate_columns].fillna(0).sum()
+    if totals.empty:
+        return "Unknown", 0.0, 0.0
+    column = str(totals.idxmax())
+    reason = column.replace("Estimated returns - ", "", 1)
+    estimated = float(totals.max())
+    returned = float(group["Returned articles"].sum())
+    return reason, estimated, 100 * estimated / returned if returned else 0.0
+
+
+def _first_existing_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    return next((column for column in candidates if column in df.columns), None)
+
+
+def _product_age(df: pd.DataFrame) -> pd.DataFrame:
+    age = pd.DataFrame({"Article variant": df["Article variant"].astype(str).unique()})
+    age["days_online"] = np.nan
+    age["date_first_on_offer"] = pd.NaT
+
+    if "Days online" in df.columns:
+        days = pd.to_numeric(df["Days online"], errors="coerce")
+        age_by_variant = days.groupby(df["Article variant"].astype(str), dropna=False).median()
+        age["days_online"] = age["Article variant"].map(age_by_variant)
+
+    if "Date first on offer" in df.columns:
+        dates = pd.to_datetime(df["Date first on offer"], errors="coerce")
+        first_date = dates.groupby(df["Article variant"].astype(str), dropna=False).min()
+        age["date_first_on_offer"] = age["Article variant"].map(first_date)
+        missing_age = age["days_online"].isna() & age["date_first_on_offer"].notna()
+        if missing_age.any():
+            today = pd.Timestamp.today().normalize()
+            age.loc[missing_age, "days_online"] = (
+                today - age.loc[missing_age, "date_first_on_offer"]
+            ).dt.days
+
+    return age
+
+
+def _lifecycle_stage(days_online: object, new_days: int = 90) -> str:
+    if pd.isna(days_online):
+        return "Unknown"
+    days = float(days_online)
+    if days <= new_days:
+        return f"New <= {new_days}d"
+    if days <= 180:
+        return "Ramping 91-180d"
+    if days <= 365:
+        return "Established 181-365d"
+    return "Mature >365d"
+
+
+def _priority_from_score(score: float, high: float = 80, medium: float = 40) -> str:
+    if score >= high:
+        return "High"
+    if score >= medium:
+        return "Medium"
+    return "Low"
 
 
 def recommendation_for_reason(reason: str, size_balance: float = 0.0) -> str:
@@ -268,6 +361,556 @@ def detect_product_anomalies(df: pd.DataFrame, min_sold: int = 30) -> pd.DataFra
     return products.sort_values("anomaly_score", ascending=False)
 
 
+def lifecycle_products(df: pd.DataFrame, min_sold: int = 10, new_days: int = 90) -> pd.DataFrame:
+    columns = [
+        "Article variant",
+        "Zalando article variant",
+        "Category",
+        "Article type",
+        "sold",
+        "returned",
+        "return_rate",
+        "category_return_rate",
+        "gap_vs_category",
+        "gap_vs_dataset",
+        "avg_net_price",
+        "estimated_returned_nmv",
+        "days_online",
+        "date_first_on_offer",
+        "lifecycle_stage",
+        "dominant_reason",
+        "dominant_reason_returns",
+        "dominant_reason_share",
+        "size_balance",
+        "confidence_flag",
+        "recommended_action",
+        "early_warning_score",
+        "early_warning_priority",
+    ]
+    if "Article variant" not in df.columns:
+        return _empty(columns)
+
+    products = benchmark_products(df, min_sold=min_sold).copy()
+    if products.empty:
+        return _empty(columns)
+
+    age = _product_age(df)
+    if age["days_online"].isna().all() and age["date_first_on_offer"].isna().all():
+        return _empty(columns)
+
+    actions = action_list(df, min_sold=min_sold)
+    action_columns = [
+        column
+        for column in [
+            "Article variant",
+            "dominant_reason",
+            "dominant_reason_returns",
+            "dominant_reason_share",
+            "size_balance",
+            "confidence_flag",
+            "recommended_action",
+        ]
+        if column in actions.columns
+    ]
+    if action_columns:
+        products = products.merge(actions[action_columns], on="Article variant", how="left")
+    products = products.merge(age, on="Article variant", how="left")
+
+    products["lifecycle_stage"] = products["days_online"].map(lambda value: _lifecycle_stage(value, new_days))
+    positive_gap = np.maximum(products.get("gap_vs_category", 0).fillna(0), 0)
+    size_pressure = np.maximum(products.get("size_balance", 0).abs().fillna(0) - 25, 0)
+    age_weight = np.where(
+        products["days_online"].fillna(new_days + 1) <= new_days,
+        1 + (new_days - products["days_online"].fillna(new_days)).clip(lower=0) / max(new_days, 1),
+        0.65,
+    )
+    products["early_warning_score"] = (
+        positive_gap * 2.0
+        + products["returned"].fillna(0) * 0.55
+        + products.get("dominant_reason_share", 0).fillna(0) * 0.25
+        + size_pressure * 0.5
+    ) * age_weight
+    products["early_warning_priority"] = products["early_warning_score"].map(_priority_from_score)
+
+    for column in columns:
+        if column not in products.columns:
+            products[column] = "" if column.endswith(("reason", "action", "flag", "priority")) else 0.0
+    return products[columns].sort_values(["days_online", "early_warning_score"], ascending=[True, False])
+
+
+def new_product_early_warning(
+    df: pd.DataFrame,
+    max_days_online: int = 90,
+    min_sold: int = 10,
+    min_returned: int = 1,
+) -> pd.DataFrame:
+    products = lifecycle_products(df, min_sold=min_sold, new_days=max_days_online)
+    if products.empty:
+        return products
+    warnings = products[
+        (products["days_online"].fillna(max_days_online + 1) <= max_days_online)
+        & (products["returned"].fillna(0) >= min_returned)
+        & (
+            (products["gap_vs_category"].fillna(0) > 0)
+            | (products["dominant_reason_share"].fillna(0) >= 45)
+            | (products["size_balance"].abs().fillna(0) >= 35)
+        )
+    ].copy()
+    return warnings.sort_values("early_warning_score", ascending=False)
+
+
+def country_report(df: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "Country",
+        "sold",
+        "returned",
+        "return_rate",
+        "return_share",
+        "gap_vs_dataset",
+        "variants",
+        "top_reason",
+        "top_reason_returns",
+        "top_reason_share",
+        "size_returns",
+        "size_share_of_returns",
+        "size_balance",
+        "high_risk_variants",
+        "estimated_returned_nmv",
+        "recommended_focus",
+    ]
+    if "Country" not in df.columns:
+        return _empty(columns)
+
+    countries = aggregate_by(df, "Country").copy()
+    if countries.empty:
+        return _empty(columns)
+
+    dataset_rr = weighted_return_rate(df)
+    countries["gap_vs_dataset"] = countries["return_rate"] - dataset_rr
+
+    too_big_col = _reason_estimate_column(df, "Item is too big")
+    too_small_col = _reason_estimate_column(df, "Item is too small")
+    product_country = aggregate_by(df, ["Country", "Article variant"])
+    country_rr = countries.set_index("Country")["return_rate"]
+    product_country["country_return_rate"] = product_country["Country"].map(country_rr).fillna(0)
+    product_country["gap_vs_country"] = product_country["return_rate"] - product_country["country_return_rate"]
+    risk_counts = (
+        product_country[
+            (product_country["returned"].fillna(0) >= 2)
+            & (product_country["gap_vs_country"].fillna(0) >= 5)
+        ]
+        .groupby("Country", dropna=False)["Article variant"]
+        .nunique()
+    )
+
+    rows = []
+    for country, group in df.groupby("Country", dropna=False):
+        top_reason, top_returns, top_share = _dominant_reason(group)
+        too_big = group[too_big_col].sum() if too_big_col else 0.0
+        too_small = group[too_small_col].sum() if too_small_col else 0.0
+        returned = group["Returned articles"].sum()
+        size_returns = too_big + too_small
+        size_balance = 100 * (too_small - too_big) / size_returns if size_returns else 0.0
+        rows.append(
+            {
+                "Country": country,
+                "top_reason": top_reason,
+                "top_reason_returns": top_returns,
+                "top_reason_share": top_share,
+                "size_returns": float(size_returns),
+                "size_share_of_returns": 100 * size_returns / returned if returned else 0.0,
+                "size_balance": float(size_balance),
+                "high_risk_variants": float(risk_counts.get(country, 0)),
+                "recommended_focus": recommendation_for_reason(top_reason, size_balance),
+            }
+        )
+
+    details = pd.DataFrame(rows)
+    report = countries.merge(details, on="Country", how="left")
+    for column in columns:
+        if column not in report.columns:
+            report[column] = 0.0
+    return report[columns].sort_values(["returned", "gap_vs_dataset"], ascending=[False, False])
+
+
+def size_fit_intelligence(df: pd.DataFrame, min_sold: int = 10) -> pd.DataFrame:
+    columns = [
+        "Article variant",
+        "Zalando article variant",
+        "Category",
+        "Article type",
+        "Gender",
+        "Season",
+        "sold",
+        "returned",
+        "return_rate",
+        "category_return_rate",
+        "gap_vs_category",
+        "too_big_returns",
+        "too_small_returns",
+        "size_returns",
+        "size_return_rate",
+        "size_share_of_returns",
+        "too_big_share",
+        "too_small_share",
+        "size_balance",
+        "fit_issue",
+        "fit_risk_score",
+        "recommended_action",
+    ]
+    if SIZE_TOO_BIG not in df.columns or SIZE_TOO_SMALL not in df.columns:
+        return _empty(columns)
+
+    products = benchmark_products(df, min_sold=min_sold).copy()
+    if products.empty:
+        return _empty(columns)
+
+    grouped = (
+        df.groupby("Article variant", dropna=False)
+        .agg(
+            too_big_returns=(SIZE_TOO_BIG, "sum"),
+            too_small_returns=(SIZE_TOO_SMALL, "sum"),
+        )
+        .reset_index()
+    )
+    products = products.merge(grouped, on="Article variant", how="left")
+    products["too_big_returns"] = products["too_big_returns"].fillna(0)
+    products["too_small_returns"] = products["too_small_returns"].fillna(0)
+    products["size_returns"] = products["too_big_returns"] + products["too_small_returns"]
+    products["size_return_rate"] = np.where(
+        products["sold"] > 0,
+        100 * products["size_returns"] / products["sold"],
+        0.0,
+    )
+    products["size_share_of_returns"] = np.where(
+        products["returned"] > 0,
+        100 * products["size_returns"] / products["returned"],
+        0.0,
+    )
+    products["too_big_share"] = np.where(
+        products["size_returns"] > 0,
+        100 * products["too_big_returns"] / products["size_returns"],
+        0.0,
+    )
+    products["too_small_share"] = np.where(
+        products["size_returns"] > 0,
+        100 * products["too_small_returns"] / products["size_returns"],
+        0.0,
+    )
+    products["size_balance"] = np.where(
+        products["size_returns"] > 0,
+        100 * (products["too_small_returns"] - products["too_big_returns"]) / products["size_returns"],
+        0.0,
+    )
+    products["fit_issue"] = np.select(
+        [
+            products["size_balance"] >= 25,
+            products["size_balance"] <= -25,
+            products["size_share_of_returns"] >= 35,
+        ],
+        ["Too small skew", "Too big skew", "High size share"],
+        default="Balanced / low signal",
+    )
+    products["fit_risk_score"] = (
+        products["size_returns"].fillna(0) * 0.8
+        + products["size_return_rate"].fillna(0) * 1.6
+        + products["size_share_of_returns"].fillna(0) * 0.35
+        + np.maximum(products["gap_vs_category"].fillna(0), 0) * 1.2
+        + np.maximum(products["size_balance"].abs().fillna(0) - 25, 0) * 0.55
+    )
+    products["recommended_action"] = [
+        recommendation_for_reason("Item is too small" if balance > 0 else "Item is too big", balance)
+        if size_returns > 0
+        else "Keep monitoring; sizing signal is weak in the current filters."
+        for balance, size_returns in zip(products["size_balance"], products["size_returns"], strict=False)
+    ]
+
+    for column in columns:
+        if column not in products.columns:
+            products[column] = "" if column in {"Gender", "Season", "fit_issue", "recommended_action"} else 0.0
+    return products[columns].sort_values("fit_risk_score", ascending=False)
+
+
+def size_fit_dimension_report(df: pd.DataFrame, dimension: str) -> pd.DataFrame:
+    columns = [
+        dimension,
+        "sold",
+        "returned",
+        "return_rate",
+        "size_returns",
+        "size_return_rate",
+        "size_share_of_returns",
+        "too_big_returns",
+        "too_small_returns",
+        "size_balance",
+        "variants",
+    ]
+    if dimension not in df.columns or SIZE_TOO_BIG not in df.columns or SIZE_TOO_SMALL not in df.columns:
+        return _empty(columns)
+    report = (
+        df.groupby(dimension, dropna=False)
+        .agg(
+            sold=("Sold articles", "sum"),
+            returned=("Returned articles", "sum"),
+            too_big_returns=(SIZE_TOO_BIG, "sum"),
+            too_small_returns=(SIZE_TOO_SMALL, "sum"),
+            variants=("Article variant", "nunique"),
+        )
+        .reset_index()
+    )
+    report["return_rate"] = np.where(report["sold"] > 0, 100 * report["returned"] / report["sold"], 0.0)
+    report["size_returns"] = report["too_big_returns"] + report["too_small_returns"]
+    report["size_return_rate"] = np.where(report["sold"] > 0, 100 * report["size_returns"] / report["sold"], 0.0)
+    report["size_share_of_returns"] = np.where(
+        report["returned"] > 0,
+        100 * report["size_returns"] / report["returned"],
+        0.0,
+    )
+    report["size_balance"] = np.where(
+        report["size_returns"] > 0,
+        100 * (report["too_small_returns"] - report["too_big_returns"]) / report["size_returns"],
+        0.0,
+    )
+    return report[columns].sort_values("size_returns", ascending=False)
+
+
+def quality_supplier_report(df: pd.DataFrame, dimension: str = "Category") -> pd.DataFrame:
+    columns = [
+        dimension,
+        "sold",
+        "returned",
+        "return_rate",
+        "variants",
+        "quality_returns",
+        "quality_return_rate",
+        "quality_share_of_returns",
+        "gap_vs_dataset_quality_share",
+        "top_quality_reason",
+        "top_quality_reason_returns",
+        "risk_score",
+        "recommended_action",
+    ]
+    if dimension not in df.columns:
+        return _empty(columns)
+    quality_columns = _reason_estimate_columns_matching(df, QUALITY_REASON_KEYWORDS)
+    if not quality_columns:
+        return _empty(columns)
+
+    dataset_quality_returns = df[quality_columns].fillna(0).sum(axis=1).sum()
+    dataset_returned = df["Returned articles"].sum()
+    dataset_quality_share = 100 * dataset_quality_returns / dataset_returned if dataset_returned else 0.0
+
+    rows = []
+    for value, group in df.groupby(dimension, dropna=False):
+        sold = float(group["Sold articles"].sum())
+        returned = float(group["Returned articles"].sum())
+        quality_returns = float(group[quality_columns].fillna(0).sum(axis=1).sum())
+        top_reason, top_returns, _ = _dominant_estimated_reason(group, quality_columns)
+        quality_share = 100 * quality_returns / returned if returned else 0.0
+        quality_rate = 100 * quality_returns / sold if sold else 0.0
+        gap = quality_share - dataset_quality_share
+        rows.append(
+            {
+                dimension: value,
+                "sold": sold,
+                "returned": returned,
+                "return_rate": 100 * returned / sold if sold else 0.0,
+                "variants": float(group["Article variant"].nunique()),
+                "quality_returns": quality_returns,
+                "quality_return_rate": quality_rate,
+                "quality_share_of_returns": quality_share,
+                "gap_vs_dataset_quality_share": gap,
+                "top_quality_reason": top_reason,
+                "top_quality_reason_returns": top_returns,
+                "risk_score": quality_returns * 0.9 + max(gap, 0) * 3 + quality_rate * 2,
+                "recommended_action": (
+                    "Review supplier, QC, packaging, and variant mapping for this group."
+                    if quality_returns > 0
+                    else "No material quality/supplier signal in the current filters."
+                ),
+            }
+        )
+    return pd.DataFrame(rows)[columns].sort_values("risk_score", ascending=False)
+
+
+def pricing_risk_report(
+    df: pd.DataFrame,
+    min_sold: int = 30,
+    premium_threshold: int = 110,
+    return_gap_threshold: int = 0,
+) -> pd.DataFrame:
+    products = benchmark_products(df, min_sold=min_sold).copy()
+    if products.empty or "nmv" not in products.columns or products["nmv"].fillna(0).sum() <= 0:
+        return _empty(
+            [
+                "Article variant",
+                "Zalando article variant",
+                "Category",
+                "Article type",
+                "sold",
+                "returned",
+                "return_rate",
+                "category_return_rate",
+                "gap_vs_category",
+                "avg_net_price",
+                "category_avg_net_price",
+                "price_index_vs_category",
+                "estimated_returned_nmv",
+                "pricing_risk_score",
+                "risk_type",
+                "recommended_action",
+            ]
+        )
+
+    risk = products[
+        (products["price_index_vs_category"].fillna(0) >= premium_threshold)
+        & (products["gap_vs_category"].fillna(0) >= return_gap_threshold)
+    ].copy()
+    if risk.empty:
+        return risk
+
+    max_value = max(float(risk["estimated_returned_nmv"].fillna(0).max()), 1.0)
+    value_component = 100 * risk["estimated_returned_nmv"].fillna(0) / max_value
+    risk["pricing_risk_score"] = (
+        np.maximum(risk["price_index_vs_category"].fillna(0) - 100, 0) * 0.8
+        + np.maximum(risk["gap_vs_category"].fillna(0), 0) * 2.0
+        + value_component * 0.7
+    )
+    risk["risk_type"] = np.select(
+        [
+            (risk["price_index_vs_category"] >= 130) & (risk["gap_vs_category"] >= 10),
+            risk["price_index_vs_category"] >= 130,
+            risk["gap_vs_category"] >= 10,
+        ],
+        ["Premium price and high return gap", "Premium price", "High return gap"],
+        default="Watch price/value",
+    )
+    risk["recommended_action"] = (
+        "Check price/value communication, competitive price position, photos, material promises, and reason mix."
+    )
+    return risk.sort_values("pricing_risk_score", ascending=False)
+
+
+def product_audit_pack(df: pd.DataFrame, article_variant: str) -> dict[str, pd.DataFrame | dict[str, float | str]]:
+    profile = product_profile(df, article_variant)
+    if not profile:
+        return {}
+
+    summary = profile["summary"]
+    raw = profile["raw"]
+    reasons = profile["reason_gap_vs_category"].copy()
+    countries = profile["countries"].copy()
+    returned = float(summary.get("returned", 0.0))
+
+    def reason_signal(keywords: tuple[str, ...]) -> tuple[float, float, str]:
+        if reasons.empty:
+            return 0.0, 0.0, "Unknown"
+        mask = reasons["reason"].astype(str).str.lower().apply(
+            lambda value: any(keyword in value for keyword in keywords)
+        )
+        matched = reasons[mask]
+        if matched.empty:
+            return 0.0, 0.0, "Unknown"
+        matched = matched.sort_values(["gap_vs_category", "estimated_returns"], ascending=[False, False])
+        row = matched.iloc[0]
+        return float(row.get("gap_vs_category", 0.0)), float(row.get("estimated_returns", 0.0)), str(row["reason"])
+
+    def priority(gap: float = 0.0, estimated: float = 0.0, absolute_signal: float = 0.0) -> str:
+        if estimated >= max(returned * 0.25, 5) or gap >= 15 or absolute_signal >= 40:
+            return "High"
+        if estimated >= max(returned * 0.1, 2) or gap >= 7 or absolute_signal >= 25:
+            return "Medium"
+        return "Low"
+
+    size_balance = float(summary.get("size_balance", 0.0))
+    size_reason = "Item is too small" if size_balance > 0 else "Item is too big"
+    desc_gap, desc_returns, desc_reason = reason_signal(("described", "description", "expected", "different"))
+    image_gap, image_returns, image_reason = reason_signal(("don't like", "like", "photo", "picture", "color", "colour", "material"))
+    quality_gap, quality_returns, quality_reason = reason_signal(QUALITY_REASON_KEYWORDS)
+    price_gap, price_returns, price_reason = reason_signal(("too expensive", "price", "value"))
+    fulfill_gap, fulfill_returns, fulfill_reason = reason_signal(("late", "delivery", "shipping", "arrived"))
+
+    top_country = "Unknown"
+    top_country_share = 0.0
+    if not countries.empty and returned:
+        top_country_row = countries.sort_values("returned", ascending=False).iloc[0]
+        top_country = str(top_country_row.get("Country", "Unknown"))
+        top_country_share = 100 * float(top_country_row.get("returned", 0.0)) / returned
+
+    checklist_rows = [
+        {
+            "area": "Fit and size",
+            "priority": priority(absolute_signal=abs(size_balance)),
+            "signal": f"{size_reason} skew: {size_balance:+.1f} p.p.",
+            "recommended_check": recommendation_for_reason(size_reason, size_balance),
+        },
+        {
+            "area": "Description accuracy",
+            "priority": priority(desc_gap, desc_returns),
+            "signal": f"{desc_reason}: {desc_returns:.0f} est. returns, gap {desc_gap:+.1f} p.p.",
+            "recommended_check": "Compare title, bullets, material, dimensions, and expectations set on the PDP.",
+        },
+        {
+            "area": "Images and styling",
+            "priority": priority(image_gap, image_returns),
+            "signal": f"{image_reason}: {image_returns:.0f} est. returns, gap {image_gap:+.1f} p.p.",
+            "recommended_check": "Review hero image, detail shots, color accuracy, model styling, and visual fit cues.",
+        },
+        {
+            "area": "Quality / supplier",
+            "priority": priority(quality_gap, quality_returns),
+            "signal": f"{quality_reason}: {quality_returns:.0f} est. returns, gap {quality_gap:+.1f} p.p.",
+            "recommended_check": "Check supplier batch, QC notes, packaging, picking accuracy, and repeat defects.",
+        },
+        {
+            "area": "Price / value",
+            "priority": priority(price_gap, price_returns, max(float(summary.get("price_index_vs_category", 0)) - 100, 0)),
+            "signal": (
+                f"Price index {float(summary.get('price_index_vs_category', 0)):.1f}; "
+                f"{price_reason}: {price_returns:.0f} est. returns"
+            ),
+            "recommended_check": "Check price position, discount context, competitor set, and whether value is visible on the PDP.",
+        },
+        {
+            "area": "Fulfillment promise",
+            "priority": priority(fulfill_gap, fulfill_returns),
+            "signal": f"{fulfill_reason}: {fulfill_returns:.0f} est. returns, gap {fulfill_gap:+.1f} p.p.",
+            "recommended_check": "Check delivery promise, late-return concentration, and countries with fulfillment pressure.",
+        },
+        {
+            "area": "Market localization",
+            "priority": priority(absolute_signal=top_country_share if top_country_share >= 55 and len(countries) > 1 else 0),
+            "signal": f"Top country {top_country}: {top_country_share:.1f}% of variant returns.",
+            "recommended_check": "Review whether the issue is market-specific before applying a global product change.",
+        },
+    ]
+    checklist = pd.DataFrame(checklist_rows)
+    priority_order = {"High": 0, "Medium": 1, "Low": 2}
+    checklist["_order"] = checklist["priority"].map(priority_order).fillna(9)
+    checklist = checklist.sort_values(["_order", "area"]).drop(columns="_order").reset_index(drop=True)
+
+    action_plan = checklist[checklist["priority"].isin(["High", "Medium"])].copy()
+    action_plan.insert(0, "Article variant", article_variant)
+    action_plan["owner_hint"] = action_plan["area"].map(
+        {
+            "Fit and size": "Product / fit",
+            "Description accuracy": "Content",
+            "Images and styling": "Creative / content",
+            "Quality / supplier": "Quality / buying",
+            "Price / value": "Pricing / merchandising",
+            "Fulfillment promise": "Operations",
+            "Market localization": "Country manager",
+        }
+    ).fillna("Business owner")
+
+    return {
+        "summary": summary,
+        "checklist": checklist,
+        "action_plan": action_plan,
+        "raw": raw,
+    }
+
+
 def _reason_gap_vs_category(df: pd.DataFrame, product_df: pd.DataFrame, category: str) -> pd.DataFrame:
     product_reasons = reason_summary(product_df)
     if not category or "Category" not in df.columns:
@@ -334,6 +977,12 @@ def product_profile(df: pd.DataFrame, article_variant: str) -> dict[str, pd.Data
     dataset_rr = weighted_return_rate(df)
     category_rr = weighted_return_rate(df[df["Category"].eq(category)]) if category else 0.0
     type_rr = weighted_return_rate(df[df["Article type"].eq(article_type)]) if article_type else 0.0
+    category_df = df[df["Category"].eq(category)] if category else df.iloc[0:0]
+    type_df = df[df["Article type"].eq(article_type)] if article_type else df.iloc[0:0]
+    category_sold = category_df["Sold articles"].sum() if not category_df.empty else 0.0
+    type_sold = type_df["Sold articles"].sum() if not type_df.empty else 0.0
+    category_avg_price = category_df["NMV"].sum() / category_sold if category_sold else 0.0
+    type_avg_price = type_df["NMV"].sum() / type_sold if type_sold else 0.0
     reason, dominant_estimated, dominant_share = _dominant_reason(product_df)
     too_big = product_df[SIZE_TOO_BIG].sum() if SIZE_TOO_BIG in product_df.columns else 0.0
     too_small = product_df[SIZE_TOO_SMALL].sum() if SIZE_TOO_SMALL in product_df.columns else 0.0
@@ -347,6 +996,12 @@ def product_profile(df: pd.DataFrame, article_variant: str) -> dict[str, pd.Data
             "dataset_return_rate": dataset_rr,
             "category_return_rate": category_rr,
             "type_return_rate": type_rr,
+            "category_avg_net_price": category_avg_price,
+            "type_avg_net_price": type_avg_price,
+            "price_gap_vs_category": summary.get("avg_net_price", 0.0) - category_avg_price,
+            "price_index_vs_category": (
+                100 * summary.get("avg_net_price", 0.0) / category_avg_price if category_avg_price else 0.0
+            ),
             "dominant_reason": reason,
             "dominant_reason_returns": dominant_estimated,
             "dominant_reason_share": dominant_share,

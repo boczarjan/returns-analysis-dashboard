@@ -88,7 +88,191 @@ def return_rate_scatter(df: pd.DataFrame, label_col: str, title: str) -> go.Figu
         custom_data=custom_data,
     )
     fig.update_traces(marker=dict(sizemode="area", sizeref=max(df["returned"].max() / 60, 1)))
+    if "return_rate" in df.columns and not df["return_rate"].dropna().empty:
+        fig.add_hline(
+            y=float(df["return_rate"].median()),
+            line_dash="dash",
+            line_color="#63736d",
+            annotation_text="median RR",
+            annotation_position="top left",
+        )
+    if "sold" in df.columns and not df["sold"].dropna().empty:
+        fig.add_vline(
+            x=float(df["sold"].median()),
+            line_dash="dot",
+            line_color="#8a9a94",
+            annotation_text="median volume",
+            annotation_position="top right",
+        )
     return apply_layout(fig, 430)
+
+
+def average_price_return_rate_scatter(df: pd.DataFrame, label_col: str = "Article variant") -> go.Figure:
+    if df.empty or "avg_net_price" not in df.columns:
+        return apply_layout(go.Figure(), 520)
+
+    size_col = "estimated_returned_nmv"
+    if size_col not in df.columns or df[size_col].fillna(0).max() <= 0:
+        size_col = "returned"
+    color_col = "price_index_vs_category" if "price_index_vs_category" in df.columns else "return_rate"
+    hover_data = {
+        "Category": True,
+        "Article type": True,
+        "sold": ":,.0f",
+        "returned": ":,.0f",
+        "return_rate": ":.1f",
+        "avg_net_price": ":,.2f",
+        "category_avg_net_price": ":,.2f",
+        "price_index_vs_category": ":.1f",
+        "estimated_returned_nmv": ":,.0f",
+    }
+    hover_data = {column: value for column, value in hover_data.items() if column in df.columns}
+    custom_data = [label_col] if label_col in df.columns else None
+    fig = px.scatter(
+        df,
+        x="avg_net_price",
+        y="return_rate",
+        size=size_col,
+        color=color_col,
+        hover_name=label_col,
+        color_continuous_scale=["#74c69d", "#f9c74f", "#d00000"],
+        labels={
+            "avg_net_price": "Average net price",
+            "return_rate": "Return rate (%)",
+            "price_index_vs_category": "Price index vs category",
+            "estimated_returned_nmv": "Estimated returned NMV",
+            "returned": "Returns",
+        },
+        title="Average net price vs return rate",
+        hover_data=hover_data,
+        custom_data=custom_data,
+    )
+    if "category_avg_net_price" in df.columns and not df["category_avg_net_price"].dropna().empty:
+        fig.add_vline(x=float(df["category_avg_net_price"].median()), line_dash="dash", line_color="#63736d")
+    return apply_layout(fig, 540)
+
+
+def lifecycle_stage_chart(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return apply_layout(go.Figure(), 520)
+    color_col = "early_warning_priority" if "early_warning_priority" in df.columns else "lifecycle_stage"
+    custom_data = ["Article variant"] if "Article variant" in df.columns else None
+    hover_data = {
+        "Category": True,
+        "Article type": True,
+        "sold": ":,.0f",
+        "returned": ":,.0f",
+        "return_rate": ":.1f",
+        "gap_vs_category": ":.1f",
+        "days_online": ":,.0f",
+        "dominant_reason": True,
+        "early_warning_score": ":.0f",
+    }
+    hover_data = {column: value for column, value in hover_data.items() if column in df.columns}
+    fig = px.scatter(
+        df,
+        x="days_online",
+        y="return_rate",
+        size="returned",
+        color=color_col,
+        hover_name="Article variant" if "Article variant" in df.columns else None,
+        labels={
+            "days_online": "Days online",
+            "return_rate": "Return rate (%)",
+            "returned": "Returns",
+            "early_warning_priority": "Priority",
+            "lifecycle_stage": "Lifecycle stage",
+        },
+        title="Lifecycle: age vs return rate",
+        hover_data=hover_data,
+        custom_data=custom_data,
+    )
+    return apply_layout(fig, 540)
+
+
+def country_report_chart(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return apply_layout(go.Figure(), 460)
+    data = df.sort_values("returned", ascending=True).tail(20)
+    fig = px.bar(
+        data,
+        x="returned",
+        y="Country",
+        orientation="h",
+        color="gap_vs_dataset",
+        color_continuous_scale=["#52b788", "#f9c74f", "#d00000"],
+        labels={"returned": "Returned items", "gap_vs_dataset": "Gap vs dataset (p.p.)"},
+        title="Country report: return volume and deviation",
+        hover_data={
+            "sold": ":,.0f",
+            "return_rate": ":.1f",
+            "top_reason": True,
+            "top_reason_share": ":.1f",
+            "high_risk_variants": ":,.0f",
+        },
+    )
+    fig.add_vline(x=0, line_dash="dash", line_color="#63736d")
+    return apply_layout(fig, 470)
+
+
+def size_fit_intelligence_chart(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return apply_layout(go.Figure(), 520)
+    fig = px.scatter(
+        df,
+        x="size_balance",
+        y="size_return_rate",
+        size="size_returns",
+        color="fit_issue",
+        hover_name="Article variant",
+        labels={
+            "size_balance": "Size skew: too big < 0 / too small > 0",
+            "size_return_rate": "Size return rate (%)",
+            "size_returns": "Size returns",
+            "fit_issue": "Fit issue",
+        },
+        title="Size & fit intelligence",
+        hover_data={
+            "Category": True,
+            "Article type": True,
+            "sold": ":,.0f",
+            "returned": ":,.0f",
+            "return_rate": ":.1f",
+            "size_share_of_returns": ":.1f",
+            "gap_vs_category": ":.1f",
+        },
+        custom_data=["Article variant"],
+    )
+    fig.add_vline(x=0, line_dash="dash", line_color="#63736d")
+    return apply_layout(fig, 540)
+
+
+def quality_supplier_chart(df: pd.DataFrame, dimension: str) -> go.Figure:
+    if df.empty or dimension not in df.columns:
+        return apply_layout(go.Figure(), 460)
+    data = df.sort_values("quality_returns", ascending=True).tail(20)
+    fig = px.bar(
+        data,
+        x="quality_returns",
+        y=dimension,
+        orientation="h",
+        color="quality_share_of_returns",
+        color_continuous_scale=["#d8f3dc", "#f9c74f", "#d00000"],
+        labels={
+            "quality_returns": "Quality/supplier returns",
+            "quality_share_of_returns": "Quality share of returns (%)",
+            dimension: dimension,
+        },
+        title=f"Quality / supplier report by {dimension}",
+        hover_data={
+            "sold": ":,.0f",
+            "returned": ":,.0f",
+            "return_rate": ":.1f",
+            "top_quality_reason": True,
+            "risk_score": ":.0f",
+        },
+    )
+    return apply_layout(fig, 500)
 
 
 def stacked_reasons(reason_dim_df: pd.DataFrame, dimension: str, top_n: int = 10) -> go.Figure:
@@ -124,6 +308,59 @@ def reason_heatmap(reason_dim_df: pd.DataFrame, dimension: str, top_n: int = 12)
     )
     fig.update_traces(hovertemplate=f"{dimension}: %{{y}}<br>Reason: %{{x}}<br>Share: %{{z:.1f}}%<extra></extra>")
     return apply_layout(fig, 500)
+
+
+def product_reason_ranking_chart(
+    df: pd.DataFrame,
+    metric_col: str,
+    reason: str,
+    top_n: int = 30,
+) -> go.Figure:
+    if df.empty or metric_col not in df.columns:
+        return apply_layout(go.Figure(), 520)
+
+    label_map = {
+        "reason_share_of_returns": "Reason share of returns (%)",
+        "reason_gap_vs_category": "Gap vs category (p.p.)",
+        "reason_gap_vs_dataset": "Gap vs full data (p.p.)",
+        "reason_gap_vs_product_average": "Gap vs avg product (p.p.)",
+        "selected_reason_returns": "Estimated reason returns",
+        "selected_reason_return_rate": "Reason return rate (%)",
+    }
+    data = df.sort_values(metric_col, ascending=True).tail(top_n)
+    hover_data = {
+        "Category": True,
+        "Article type": True,
+        "sold": ":,.0f",
+        "returned": ":,.0f",
+        "return_rate": ":.1f",
+        "avg_net_price": ":,.2f",
+        "price_index_vs_category": ":.1f",
+        "estimated_returned_nmv": ":,.0f",
+        "selected_reason_returns": ":,.0f",
+        "reason_returned_nmv": ":,.0f",
+        "reason_share_of_returns": ":.1f",
+        "category_reason_share": ":.1f",
+        "dataset_reason_share": ":.1f",
+        "avg_product_reason_share": ":.1f",
+    }
+    hover_data = {column: value for column, value in hover_data.items() if column in data.columns}
+    fig = px.bar(
+        data,
+        x=metric_col,
+        y="Article variant",
+        orientation="h",
+        color=metric_col,
+        color_continuous_scale=["#d8f3dc", "#f9c74f", "#d00000"],
+        labels={metric_col: label_map.get(metric_col, metric_col), "Article variant": "Article variant"},
+        title=f"Top variants for return reason: {reason}",
+        hover_name="Article variant",
+        hover_data=hover_data,
+        custom_data=["Article variant"],
+    )
+    if "gap" in metric_col:
+        fig.add_vline(x=0, line_dash="dash", line_color="#63736d")
+    return apply_layout(fig, 560)
 
 
 def size_reason_chart(df: pd.DataFrame, dimension: str) -> go.Figure:

@@ -284,3 +284,63 @@ def product_reason_ranking(
         ["reason_share_of_returns", "selected_reason_returns"],
         ascending=[False, False],
     )
+
+
+def article_type_reason_matrix(
+    df: pd.DataFrame,
+    article_type: str,
+    min_returned: int = 1,
+) -> pd.DataFrame:
+    df = disambiguate_na_article_variants(df)
+    if "Article type" not in df.columns:
+        return pd.DataFrame()
+
+    subset = df[df["Article type"].astype(str) == str(article_type)].copy()
+    if subset.empty:
+        return pd.DataFrame()
+
+    reason_cols = reason_columns(subset)
+    if not reason_cols:
+        return pd.DataFrame()
+
+    estimated_cols: list[tuple[str, str]] = []
+    for column in reason_cols:
+        reason = clean_reason_name(column)
+        estimated_col = estimated_reason_column(reason)
+        if estimated_col not in subset.columns:
+            subset[estimated_col] = (
+                subset["Returned articles"].fillna(0) * subset[column].fillna(0) / 100
+            )
+        estimated_cols.append((reason, estimated_col))
+
+    agg_map: dict[str, tuple[str, str]] = {
+        "Sold articles": ("Sold articles", "sum"),
+        "Returned articles": ("Returned articles", "sum"),
+    }
+    for reason, estimated_col in estimated_cols:
+        agg_map[estimated_col] = (estimated_col, "sum")
+
+    grouped = (
+        subset.groupby("Article variant", dropna=False)
+        .agg(**{key: pd.NamedAgg(column=col, aggfunc=func) for key, (col, func) in agg_map.items()})
+        .reset_index()
+    )
+
+    grouped = grouped[grouped["Returned articles"].fillna(0) >= min_returned].copy()
+    if grouped.empty:
+        return pd.DataFrame()
+
+    for reason, estimated_col in estimated_cols:
+        grouped[reason] = np.where(
+            grouped["Returned articles"] > 0,
+            100 * grouped[estimated_col].fillna(0) / grouped["Returned articles"],
+            0.0,
+        )
+
+    output_columns = ["Article variant", "Sold articles", "Returned articles"] + [
+        reason for reason, _ in estimated_cols
+    ]
+    result = grouped[output_columns].rename(
+        columns={"Sold articles": "sold", "Returned articles": "returned"}
+    )
+    return result.sort_values("returned", ascending=False).reset_index(drop=True)

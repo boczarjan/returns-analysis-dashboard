@@ -17,12 +17,20 @@ Interactive Streamlit dashboard for browsing, filtering, and visualizing return 
 - Lifecycle and new product early warning reports using `Days online` or `Date first on offer`.
 - Country playbook with dominant reasons, size skew, risky variants, and recommended focus.
 - Size & fit intelligence with too-big / too-small skew and variant-level fit risk scoring.
+- Predictive return risk view with expected next-30-day returns, risk drivers, and recommended actions.
+- Preventable returns report that groups fixable reasons into size, description, visual/material, quality, fulfillment, and price areas.
+- Size guidance report with size-up / size-down / fit-copy recommendations and confidence levels.
+- Trend report for comparing current filtered data with a previous-period CSV baseline.
+- Forecast report with configurable horizon, expected returns, returned NMV, and risk score.
 - Product page audit pack for PDP, fit, quality, price, fulfillment, and market checks.
-- Quality/Supplier, Country, Pricing risk, and New product early warning report views with CSV export.
+- Quality/Supplier, Country, Pricing risk, New product early warning, trend, preventable returns, size guidance, and forecast report views with CSV export.
 - Executive cockpit with top fixes, pricing risks, new product alerts, and narrative insight cards.
 - Analysis presets, resettable filters, data-retention context, and a higher-confidence filter.
 - Compare mode for countries, categories, article types, seasons, genders, and variants.
 - Risk-index columns and compact product audit layout for faster visual scanning.
+- Modern visual system with semantic risk colors, compact bento-style cards, hover microinteractions, and light/dark mode.
+- Quick-scan table mode with optional advanced columns for deeper analysis.
+- Plotly charts inherit the selected app theme for consistent light and dark presentations.
 - Segmentation, Pareto, data quality analysis, and return reduction simulation.
 - PDF export for the currently filtered report and CSV export for tables.
 - Parquet cache and calculation cache for faster work on larger files.

@@ -474,3 +474,118 @@ def build_pdf_report(df: pd.DataFrame) -> bytes:
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     buffer.seek(0)
     return buffer.getvalue()
+
+
+def build_article_type_reasons_pdf(
+    matrix: pd.DataFrame,
+    article_type: str,
+    min_returned: int,
+    max_rows: int = 200,
+) -> bytes:
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=1.0 * cm,
+        rightMargin=1.0 * cm,
+        topMargin=1 * cm,
+        bottomMargin=1.15 * cm,
+        title=f"Article type reasons report - {article_type}",
+    )
+
+    sample = getSampleStyleSheet()
+    styles = {
+        "Title": ParagraphStyle(
+            "Title",
+            parent=sample["Title"],
+            fontName=FONT_BOLD,
+            fontSize=20,
+            leading=24,
+            textColor=INK,
+            alignment=TA_LEFT,
+            spaceAfter=4,
+        ),
+        "Muted": ParagraphStyle(
+            "Muted",
+            parent=sample["BodyText"],
+            fontName=FONT,
+            fontSize=8,
+            leading=11,
+            textColor=MUTED,
+        ),
+        "Section": ParagraphStyle(
+            "Section",
+            parent=sample["Heading2"],
+            fontName=FONT_BOLD,
+            fontSize=13,
+            leading=16,
+            textColor=GREEN,
+            spaceBefore=8,
+            spaceAfter=4,
+        ),
+        "Header": ParagraphStyle(
+            "Header",
+            parent=sample["BodyText"],
+            fontName=FONT_BOLD,
+            fontSize=7,
+            leading=9,
+            textColor=colors.white,
+        ),
+        "Cell": ParagraphStyle(
+            "Cell",
+            parent=sample["BodyText"],
+            fontName=FONT,
+            fontSize=7,
+            leading=9,
+            textColor=INK,
+        ),
+    }
+
+    truncated = len(matrix) > max_rows
+    matrix = matrix.head(max_rows).copy()
+
+    reason_cols = [
+        column for column in matrix.columns if column not in {"Article variant", "sold", "returned"}
+    ]
+
+    story = [
+        Paragraph(f"Article type reasons report - {article_type}", styles["Title"]),
+        Paragraph(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | "
+            f"Variants: {_fmt_number(len(matrix))} | Min. returned items: {_fmt_number(min_returned)}",
+            styles["Muted"],
+        ),
+    ]
+    if truncated:
+        story.append(
+            Paragraph(
+                f"Showing top {_fmt_number(max_rows)} variants by returned items.",
+                styles["Muted"],
+            )
+        )
+    story.append(Spacer(1, 0.25 * cm))
+
+    if not matrix.empty:
+        page_width = landscape(A4)[0] - 2 * cm
+        fixed_width = 4.5 * cm + 1.7 * cm + 1.7 * cm
+        remaining = max(page_width - fixed_width, 6 * cm)
+        reason_col_width = remaining / max(len(reason_cols), 1)
+        column_widths = [4.5 * cm, 1.7 * cm, 1.7 * cm] + [reason_col_width] * len(reason_cols)
+
+        rows: list[list[object]] = [["Article variant", "Sold", "Returned"] + reason_cols]
+        for record in matrix.to_dict(orient="records"):
+            cells: list[object] = [
+                _clean(record.get("Article variant")),
+                _fmt_number(record.get("sold", 0)),
+                _fmt_number(record.get("returned", 0)),
+            ]
+            for reason in reason_cols:
+                cells.append(_fmt_percent(record.get(reason)))
+            rows.append(cells)
+
+        story += _section("Reason share per variant (%)", styles)
+        story.append(_table(rows, column_widths, styles["Cell"], styles["Header"]))
+
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    buffer.seek(0)
+    return buffer.getvalue()

@@ -299,24 +299,28 @@ def parquet_cache_path(path: str | Path) -> Path:
     return CACHE_DIR / f"{_path_cache_key(path)}.parquet"
 
 
+def _safe_unlink(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def load_returns_path_with_parquet(path: str | Path) -> pd.DataFrame:
     cache_file = parquet_cache_path(path)
     if cache_file.exists():
         try:
             return pd.read_parquet(cache_file)
         except Exception:
-            cache_file.unlink(missing_ok=True)
+            _safe_unlink(cache_file)
 
     df = load_returns_csv(path)
 
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        temp_file = cache_file.with_suffix(".tmp.parquet")
-        df.to_parquet(temp_file, index=False)
-        temp_file.replace(cache_file)
+        df.to_parquet(cache_file, index=False)
     except Exception:
-        temp_file = cache_file.with_suffix(".tmp.parquet")
-        temp_file.unlink(missing_ok=True)
+        pass
 
     return df
 

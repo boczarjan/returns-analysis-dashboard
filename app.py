@@ -11,12 +11,16 @@ import streamlit as st
 
 from returns_dashboard.charts import (
     action_list_chart,
+    apply_layout,
     average_price_return_rate_scatter,
     benchmark_gap_chart,
     country_bar,
     country_report_chart,
     lifecycle_stage_chart,
     pareto_chart,
+    forecast_report_chart,
+    predictive_risk_chart,
+    preventable_returns_chart,
     quality_bar,
     quality_supplier_chart,
     reason_bar,
@@ -25,10 +29,13 @@ from returns_dashboard.charts import (
     return_rate_scatter,
     season_heatmap,
     segmentation_chart,
+    set_chart_theme,
     simulation_chart,
+    size_guidance_chart,
     size_fit_intelligence_chart,
     size_reason_chart,
     stacked_reasons,
+    trend_report_chart,
     treemap,
 )
 from returns_dashboard.data_loader import (
@@ -49,29 +56,35 @@ from returns_dashboard.deep_analysis import (
     country_report,
     data_quality_report,
     detect_product_anomalies,
+    forecast_report,
     lifecycle_products,
     new_product_early_warning,
     pareto_breakpoints,
     pareto_products,
+    predictive_return_risk,
+    preventable_returns_report,
     pricing_risk_report,
     product_profile,
     product_audit_pack,
     product_segments,
     quality_supplier_report,
     season_article_type_analysis,
+    size_guidance_report,
     size_fit_dimension_report,
     size_fit_intelligence,
     simulate_reason_reduction,
+    trend_report,
 )
 from returns_dashboard.metrics import (
     aggregate_by,
+    article_type_reason_matrix,
     kpi_summary,
     product_ranking,
     product_reason_ranking,
     reason_by_dimension,
     reason_summary,
 )
-from returns_dashboard.pdf_report import build_pdf_report
+from returns_dashboard.pdf_report import build_article_type_reasons_pdf, build_pdf_report
 
 
 st.set_page_config(
@@ -87,26 +100,33 @@ CUSTOM_CSS = """
 :root {
   --ink: #102027;
   --muted: #63736d;
-  --panel: rgba(255,255,255,.9);
+  --app-bg: linear-gradient(135deg, rgba(239,248,242,.96) 0%, rgba(255,252,241,.9) 48%, rgba(236,246,255,.96) 100%);
+  --sidebar-bg: rgba(247, 252, 245, .96);
+  --panel: rgba(255,255,255,.88);
+  --panel-strong: rgba(255,255,255,.96);
+  --panel-muted: rgba(255,255,255,.72);
   --line: rgba(49,87,44,.16);
-  --green: #31572c;
-  --green-soft: #e9f5ec;
-  --amber: #f9c74f;
+  --shadow: 0 14px 36px rgba(16, 32, 39, .08);
+  --shadow-soft: 0 8px 22px rgba(16, 32, 39, .055);
+  --green: #1f6f5b;
+  --green-soft: #e6f4ee;
+  --amber: #f2b84b;
   --amber-soft: #fff4c7;
-  --red: #c1121f;
-  --red-soft: #ffe1df;
-  --blue-soft: #e5f1ff;
+  --red: #c63d32;
+  --red-soft: #ffe3df;
+  --blue: #236d9a;
+  --blue-soft: #e4f1fb;
+  --neutral-soft: #eef3f2;
 }
 
 .stApp {
-  background:
-    linear-gradient(135deg, rgba(239,248,242,.96) 0%, rgba(255,252,241,.9) 48%, rgba(236,246,255,.96) 100%);
+  background: var(--app-bg);
   color: var(--ink);
 }
 
 div[data-testid="stHeader"] { background: transparent; }
 section[data-testid="stSidebar"] {
-  background: rgba(247, 252, 245, .96);
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--line);
 }
 
@@ -114,8 +134,8 @@ section[data-testid="stSidebar"] {
   padding: 18px 22px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255,255,255,.82);
-  box-shadow: 0 12px 34px rgba(16, 32, 39, .06);
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
   margin-bottom: 10px;
 }
 
@@ -125,7 +145,7 @@ section[data-testid="stSidebar"] {
   line-height: 1.02;
   letter-spacing: 0;
   margin: 0 0 6px;
-  color: #102027;
+  color: var(--ink);
 }
 
 .hero p {
@@ -142,7 +162,7 @@ section[data-testid="stSidebar"] {
   align-items: center;
   padding: 10px 12px;
   margin: 0 0 16px;
-  background: rgba(255,255,255,.72);
+  background: var(--panel-muted);
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -171,7 +191,7 @@ section[data-testid="stSidebar"] {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px 13px 11px;
-  box-shadow: 0 10px 28px rgba(16, 32, 39, .06);
+  box-shadow: var(--shadow-soft);
 }
 
 .kpi span {
@@ -249,11 +269,18 @@ section[data-testid="stSidebar"] {
 }
 
 .insight-card, .action-card, .story-card, .cockpit-panel, .profile-panel {
-  background: rgba(255,255,255,.82);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px 15px;
-  box-shadow: 0 10px 26px rgba(16,32,39,.06);
+  box-shadow: var(--shadow-soft);
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.story-card:hover, .action-card:hover, .cockpit-panel:hover, .profile-panel:hover {
+  transform: translateY(-1px);
+  border-color: rgba(31,111,91,.32);
+  box-shadow: var(--shadow);
 }
 
 .insight-card b, .action-card b, .story-card b {
@@ -287,8 +314,8 @@ section[data-testid="stSidebar"] {
 .badge-high { background: var(--red-soft); color: var(--red); }
 .badge-medium { background: var(--amber-soft); color: #755500; }
 .badge-low { background: var(--green-soft); color: var(--green); }
-.badge-info { background: var(--blue-soft); color: #14507a; }
-.badge-muted { background: #edf1ef; color: #51615b; }
+.badge-info { background: var(--blue-soft); color: var(--blue); }
+.badge-muted { background: var(--neutral-soft); color: #51615b; }
 .badge-danger { background: var(--red-soft); color: var(--red); }
 .badge-warning { background: var(--amber-soft); color: #755500; }
 .badge-ok { background: var(--green-soft); color: var(--green); }
@@ -300,16 +327,35 @@ section[data-testid="stSidebar"] {
 }
 
 div[data-testid="stMetric"] {
-  background: rgba(255,255,255,.78);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px 16px;
+  box-shadow: var(--shadow-soft);
 }
 
 div[data-testid="stDataFrame"] {
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+
+div[data-testid="stExpander"] {
+  border-color: var(--line);
+  background: var(--panel-muted);
+  border-radius: 8px;
+}
+
+button[kind="primary"], div[data-testid="stDownloadButton"] button {
+  border-radius: 8px;
+  font-weight: 750;
+}
+
+.quick-scan-note {
+  color: var(--muted);
+  font-size: .82rem;
+  margin: 0 0 6px;
 }
 
 @media (max-width: 1100px) {
@@ -328,12 +374,75 @@ div[data-testid="stDataFrame"] {
 """
 
 
+DARK_THEME_CSS = """
+<style>
+:root {
+  --ink: #e7eef0;
+  --muted: #9fb0b5;
+  --app-bg: linear-gradient(135deg, #0d1418 0%, #111827 48%, #13202a 100%);
+  --sidebar-bg: rgba(13, 20, 24, .98);
+  --panel: rgba(22, 32, 38, .9);
+  --panel-strong: rgba(28, 39, 46, .96);
+  --panel-muted: rgba(22, 32, 38, .74);
+  --line: rgba(197, 219, 214, .16);
+  --shadow: 0 16px 42px rgba(0, 0, 0, .28);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, .22);
+  --green: #66c7a8;
+  --green-soft: rgba(102, 199, 168, .16);
+  --amber: #f2c66d;
+  --amber-soft: rgba(242, 198, 109, .18);
+  --red: #ff8a7d;
+  --red-soft: rgba(255, 138, 125, .16);
+  --blue: #8fc7ff;
+  --blue-soft: rgba(143, 199, 255, .16);
+  --neutral-soft: rgba(226, 235, 237, .12);
+}
+
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+.stApp label,
+.stApp p,
+.stApp span {
+  color: var(--ink);
+}
+
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div {
+  background: var(--panel-strong);
+  border-color: var(--line);
+}
+
+div[data-testid="stDataFrame"] {
+  background: var(--panel-strong);
+}
+</style>
+"""
+
+
+def build_custom_css(theme: str) -> str:
+    if str(theme).lower() == "dark":
+        return CUSTOM_CSS + DARK_THEME_CSS
+    return CUSTOM_CSS
+
+
 NAV_GROUPS = {
-    "Overview": ["Executive cockpit", "Overview", "Compare"],
-    "Fix now": ["Action list", "Watchlist", "Anomalies", "New product early warning", "Benchmarks"],
+    "Overview": ["Executive cockpit", "Overview", "Compare", "Trend report", "Forecast report"],
+    "Fix now": ["Action list", "Watchlist", "Anomalies", "Predictive risk", "New product early warning", "Benchmarks"],
     "Products": ["Product profile", "Product audit pack", "Lifecycle", "Segmentation", "Pareto", "Products"],
     "Markets": ["Country report"],
-    "Reasons": ["Return reasons", "Product reason ranking", "Size & fit intelligence", "Sizing", "Seasons", "Simulation"],
+    "Reasons": [
+        "Return reasons",
+        "Product reason ranking",
+        "Article type reasons report",
+        "Preventable returns report",
+        "Quality/Supplier report",
+        "Size guidance report",
+        "Size & fit intelligence",
+        "Sizing",
+        "Seasons",
+        "Simulation",
+    ],
     "Finance": ["Pricing", "Pricing risk report"],
     "Data quality": ["Data quality"],
     "Exports": ["Data"],
@@ -439,6 +548,13 @@ def cached_product_ranking(df: pd.DataFrame, min_sold: int, cache_version: str =
 
 
 @st.cache_data(show_spinner=False, max_entries=64)
+def cached_article_type_reason_matrix(
+    df: pd.DataFrame, article_type: str, min_returned: int
+) -> pd.DataFrame:
+    return article_type_reason_matrix(df, article_type=article_type, min_returned=min_returned)
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
 def cached_product_reason_ranking(
     df: pd.DataFrame,
     reason: str,
@@ -499,6 +615,31 @@ def cached_new_product_early_warning(
         min_sold=min_sold,
         min_returned=min_returned,
     )
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def cached_predictive_return_risk(df: pd.DataFrame, min_sold: int) -> pd.DataFrame:
+    return predictive_return_risk(df, min_sold=min_sold)
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def cached_preventable_returns_report(df: pd.DataFrame, dimension: str, min_sold: int) -> pd.DataFrame:
+    return preventable_returns_report(df, dimension=dimension, min_sold=min_sold)
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def cached_size_guidance_report(df: pd.DataFrame, min_sold: int) -> pd.DataFrame:
+    return size_guidance_report(df, min_sold=min_sold)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def cached_trend_report(current_df: pd.DataFrame, baseline_df: pd.DataFrame, dimension: str) -> pd.DataFrame:
+    return trend_report(current_df, baseline_df, dimension=dimension)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def cached_forecast_report(df: pd.DataFrame, horizon_days: int, min_sold: int) -> pd.DataFrame:
+    return forecast_report(df, horizon_days=horizon_days, min_sold=min_sold)
 
 
 @st.cache_data(show_spinner=False, max_entries=64)
@@ -752,6 +893,18 @@ def sidebar_navigation() -> str:
     return st.sidebar.radio("View", NAV_GROUPS[group], index=0)
 
 
+def sidebar_appearance() -> str:
+    st.sidebar.header("Appearance")
+    return st.sidebar.radio(
+        "Theme",
+        ["Light", "Dark"],
+        index=0,
+        horizontal=True,
+        key="appearance_theme",
+        help="Light mode is optimized for table-heavy analysis; dark mode is useful for presentation and low-light review.",
+    )
+
+
 def multiselect_filter(df: pd.DataFrame, column: str, label: str, key: str) -> list[str]:
     if column not in df.columns:
         return []
@@ -998,6 +1151,45 @@ def risk_column_config(score_label: str = "risk index") -> dict:
     }
 
 
+def render_scan_table(
+    df: pd.DataFrame,
+    quick_columns: list[str],
+    column_config: dict,
+    key: str,
+    *,
+    max_rows: int = 250,
+    variant_links: bool = True,
+    advanced_default: bool = False,
+) -> None:
+    if df.empty:
+        st.info("No rows to display for the current filters.")
+        return
+
+    show_advanced = st.checkbox(
+        "Show advanced columns",
+        value=advanced_default,
+        key=f"{key}_advanced_columns",
+    )
+    if show_advanced:
+        display = df.head(max_rows).copy()
+    else:
+        available = [column for column in quick_columns if column in df.columns]
+        display = df[available].head(max_rows).copy()
+        st.markdown(
+            '<div class="quick-scan-note">Quick scan view. Enable advanced columns for the full analytical table.</div>',
+            unsafe_allow_html=True,
+        )
+    if variant_links:
+        display = with_variant_links(display)
+        column_config = variant_column_config(column_config)
+    st.dataframe(
+        display,
+        width="stretch",
+        hide_index=True,
+        column_config=column_config,
+    )
+
+
 def story_card(title: str, value: str, detail: str, kind: str = "info") -> str:
     return (
         '<div class="story-card">'
@@ -1066,6 +1258,29 @@ def render_storyline(df: pd.DataFrame, view: str) -> None:
                     "New product alerts",
                     f'{format_number(len(warnings))} variants',
                     f'{format_number(warnings["returned"].sum())} returns in early-warning set',
+                    "warning",
+                )
+            )
+    if view in {"Predictive risk", "Forecast report", "Executive cockpit"}:
+        predictive = cached_predictive_return_risk(df, min_sold=20)
+        if not predictive.empty:
+            high = int((predictive["predictive_risk_level"] == "High").sum())
+            cards.append(
+                story_card(
+                    "Predicted next-30d returns",
+                    format_number(predictive["predicted_returns_next_30d"].sum()),
+                    f"{format_number(high)} high-risk variants in current filters",
+                    "danger" if high else "warning",
+                )
+            )
+    if view in {"Preventable returns report", "Executive cockpit"}:
+        preventable = cached_preventable_returns_report(df, "Article variant", min_sold=10)
+        if not preventable.empty:
+            cards.append(
+                story_card(
+                    "Preventable returns",
+                    format_number(preventable["preventable_returns"].sum()),
+                    f'top area: {str(preventable.iloc[0]["top_preventable_area"])}',
                     "warning",
                 )
             )
@@ -1375,13 +1590,43 @@ def report_column_config() -> dict:
         "top_reason_returns": st.column_config.NumberColumn("top reason returns", format="%.0f"),
         "top_reason_share": st.column_config.NumberColumn("top reason share (%)", format="%.1f"),
         "size_returns": st.column_config.NumberColumn("size returns", format="%.0f"),
+        "size_return_rate": st.column_config.NumberColumn("size return rate (%)", format="%.1f"),
         "size_share_of_returns": st.column_config.NumberColumn("size share (%)", format="%.1f"),
         "size_balance": st.column_config.NumberColumn("size balance", format="%.1f"),
+        "guidance_score": st.column_config.NumberColumn("guidance score", format="%.0f"),
         "quality_returns": st.column_config.NumberColumn("quality returns", format="%.0f"),
         "quality_return_rate": st.column_config.NumberColumn("quality return rate (%)", format="%.1f"),
         "quality_share_of_returns": st.column_config.NumberColumn("quality share (%)", format="%.1f"),
         "gap_vs_dataset_quality_share": st.column_config.NumberColumn("quality gap vs dataset", format="%.1f"),
         "top_quality_reason_returns": st.column_config.NumberColumn("top quality reason returns", format="%.0f"),
+        "preventable_returns": st.column_config.NumberColumn("preventable returns", format="%.0f"),
+        "preventable_return_rate": st.column_config.NumberColumn("preventable RR (%)", format="%.1f"),
+        "preventable_share_of_returns": st.column_config.NumberColumn("preventable share (%)", format="%.1f"),
+        "top_preventable_returns": st.column_config.NumberColumn("top preventable returns", format="%.0f"),
+        "preventable_score": st.column_config.NumberColumn("preventable score", format="%.0f"),
+        "predicted_return_rate": st.column_config.NumberColumn("predicted RR (%)", format="%.1f"),
+        "predicted_returns_next_30d": st.column_config.NumberColumn("predicted returns 30d", format="%.1f"),
+        "predictive_risk_score": st.column_config.NumberColumn("predictive risk score", format="%.0f"),
+        "sold_current": st.column_config.NumberColumn("sold current", format="%.0f"),
+        "sold_baseline": st.column_config.NumberColumn("sold baseline", format="%.0f"),
+        "sold_delta": st.column_config.NumberColumn("sold delta", format="%.0f"),
+        "returned_current": st.column_config.NumberColumn("returned current", format="%.0f"),
+        "returned_baseline": st.column_config.NumberColumn("returned baseline", format="%.0f"),
+        "returned_delta": st.column_config.NumberColumn("returned delta", format="%.0f"),
+        "return_rate_current": st.column_config.NumberColumn("current RR (%)", format="%.1f"),
+        "return_rate_baseline": st.column_config.NumberColumn("baseline RR (%)", format="%.1f"),
+        "return_rate_delta": st.column_config.NumberColumn("RR delta", format="%.1f"),
+        "estimated_returned_nmv_current": st.column_config.NumberColumn("current returned NMV", format="%.0f"),
+        "estimated_returned_nmv_baseline": st.column_config.NumberColumn("baseline returned NMV", format="%.0f"),
+        "estimated_returned_nmv_delta": st.column_config.NumberColumn("returned NMV delta", format="%.0f"),
+        "trend_score": st.column_config.NumberColumn("trend score", format="%.0f"),
+        "daily_sold": st.column_config.NumberColumn("daily sold", format="%.2f"),
+        "daily_returns": st.column_config.NumberColumn("daily returns", format="%.2f"),
+        "forecast_sold": st.column_config.NumberColumn("forecast sold", format="%.0f"),
+        "forecast_returns": st.column_config.NumberColumn("forecast returns", format="%.1f"),
+        "forecast_return_rate": st.column_config.NumberColumn("forecast RR (%)", format="%.1f"),
+        "forecast_returned_nmv": st.column_config.NumberColumn("forecast returned NMV", format="%.0f"),
+        "forecast_risk_score": st.column_config.NumberColumn("forecast risk score", format="%.0f"),
         "risk_score": st.column_config.NumberColumn("risk score", format="%.0f"),
         "pricing_risk_score": st.column_config.NumberColumn("pricing risk score", format="%.0f"),
         "high_risk_variants": st.column_config.NumberColumn("high risk variants", format="%.0f"),
@@ -1660,6 +1905,92 @@ def render_product_reason_ranking(df: pd.DataFrame) -> None:
     )
 
 
+def render_article_type_reasons_report(df: pd.DataFrame) -> None:
+    render_guidance(
+        "How to read the article type reason report",
+        "For every variant in the selected article type the table shows the share of returns (%) attributed to each return reason. Percentages are weighted by returned items, so high-volume variants drive the picture instead of being averaged out.",
+    )
+
+    if "Article type" not in df.columns:
+        st.info("The current data does not contain an Article type column.")
+        return
+
+    reason_cols = reason_columns(df)
+    if not reason_cols:
+        st.info("The current data does not contain return reason columns.")
+        return
+
+    article_types = sorted(df["Article type"].dropna().astype(str).unique().tolist())
+    if not article_types:
+        st.info("No article types available in the filtered data.")
+        return
+
+    left, right = st.columns((2, 1))
+    with left:
+        selected_article_type = st.selectbox(
+            "Article type", article_types, key="article_type_reasons_type"
+        )
+    with right:
+        min_returned = st.slider(
+            "Minimum returned items",
+            1,
+            200,
+            5,
+            key="article_type_reasons_min_returned",
+        )
+
+    matrix = cached_article_type_reason_matrix(df, selected_article_type, min_returned)
+    if matrix.empty:
+        st.info("No variants meet the current threshold for this article type.")
+        return
+
+    reason_value_cols = [
+        column for column in matrix.columns if column not in {"Article variant", "sold", "returned"}
+    ]
+
+    st.caption(
+        f"{len(matrix):,} variants in '{selected_article_type}' (min. {min_returned} returned items). "
+        "Reason columns are expressed as % of the variant's returns."
+    )
+
+    column_config: dict[str, object] = {
+        "sold": st.column_config.NumberColumn("sold", format="%.0f"),
+        "returned": st.column_config.NumberColumn("returned", format="%.0f"),
+    }
+    for column in reason_value_cols:
+        column_config[column] = st.column_config.NumberColumn(column, format="%.1f")
+
+    st.dataframe(
+        with_variant_links(matrix),
+        width="stretch",
+        hide_index=True,
+        column_config=variant_column_config(column_config),
+    )
+
+    csv_col, pdf_col = st.columns(2)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    safe_type = encode_variant_key(selected_article_type)
+    with csv_col:
+        st.download_button(
+            "Download article type reason report CSV",
+            data=dataframe_to_csv_bytes(matrix),
+            file_name=f"returns_article_type_reasons_{safe_type}_{timestamp}.csv",
+            mime="text/csv",
+            width="stretch",
+        )
+    with pdf_col:
+        pdf_bytes = build_article_type_reasons_pdf(
+            matrix, article_type=selected_article_type, min_returned=min_returned
+        )
+        st.download_button(
+            "Download article type reason report PDF",
+            data=pdf_bytes,
+            file_name=f"returns_article_type_reasons_{safe_type}_{timestamp}.pdf",
+            mime="application/pdf",
+            width="stretch",
+        )
+
+
 def render_size(df: pd.DataFrame) -> None:
     required = {"Estimated returns - Item is too big", "Estimated returns - Item is too small"}
     if not required.issubset(df.columns):
@@ -1744,11 +2075,21 @@ def render_size_fit_intelligence(df: pd.DataFrame) -> None:
     )
     with st.expander("Details: variants with size & fit signal", expanded=True):
         display = add_risk_index(products.head(250), "fit_risk_score")
-        st.dataframe(
-            with_variant_links(display),
-            width="stretch",
-            hide_index=True,
-            column_config=variant_column_config({**size_fit_column_config(), **risk_column_config()}),
+        render_scan_table(
+            display,
+            [
+                "Article variant",
+                "risk_level",
+                "risk_index",
+                "fit_issue",
+                "size_returns",
+                "size_return_rate",
+                "size_balance",
+                "return_rate",
+                "recommended_action",
+            ],
+            {**size_fit_column_config(), **risk_column_config()},
+            key="size_fit_table",
         )
 
 
@@ -1758,11 +2099,19 @@ def render_products(df: pd.DataFrame) -> None:
     plot_variant_chart(return_rate_scatter(ranking.head(80), "Article variant", "Variants: return rate vs return volume"), key="products_variant_scatter")
 
     with st.expander("Details: variant ranking", expanded=False):
-        st.dataframe(
-            with_variant_links(ranking),
-            width="stretch",
-            hide_index=True,
-            column_config=variant_column_config({
+        render_scan_table(
+            ranking,
+            [
+                "Article variant",
+                "Category",
+                "Article type",
+                "sold",
+                "returned",
+                "return_rate",
+                "return_gap_vs_dataset",
+                "estimated_returned_nmv",
+            ],
+            {
                 "sold": st.column_config.NumberColumn("sold", format="%.0f"),
                 "returned": st.column_config.NumberColumn("returned", format="%.0f"),
                 "nmv": st.column_config.NumberColumn("NMV", format="%.0f"),
@@ -1772,7 +2121,8 @@ def render_products(df: pd.DataFrame) -> None:
                 "estimated_returned_nmv": st.column_config.NumberColumn("est. returned NMV", format="%.0f"),
                 "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f"),
                 "return_gap_vs_dataset": st.column_config.NumberColumn("gap vs dataset", format="%.1f"),
-            }),
+            },
+            key="products_ranking_table",
         )
 
 
@@ -1813,11 +2163,22 @@ def render_action_list(df: pd.DataFrame) -> None:
 
     with st.expander("Details: full action list", expanded=True):
         display = add_risk_index(actions.head(200), "priority_score")
-        st.dataframe(
-            with_variant_links(display),
-            width="stretch",
-            hide_index=True,
-            column_config=variant_column_config({**action_column_config(), **risk_column_config()}),
+        render_scan_table(
+            display,
+            [
+                "Article variant",
+                "risk_level",
+                "risk_index",
+                "priority",
+                "problem_type",
+                "dominant_reason",
+                "returned",
+                "return_rate",
+                "gap_vs_category",
+                "recommended_action",
+            ],
+            {**action_column_config(), **risk_column_config()},
+            key="action_list_table",
         )
 
 
@@ -1863,20 +2224,27 @@ def render_anomalies(df: pd.DataFrame) -> None:
         width="stretch",
     )
     display = add_risk_index(anomalies.head(250), "anomaly_score")
-    st.dataframe(
-        with_variant_links(display),
-        width="stretch",
-        hide_index=True,
-        column_config=variant_column_config(
-            {
-                **risk_column_config(),
-                "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f"),
-                "gap_vs_category": st.column_config.NumberColumn("gap vs category", format="%.1f"),
-                "gap_vs_dataset": st.column_config.NumberColumn("gap vs dataset", format="%.1f"),
-                "dominant_reason_share": st.column_config.NumberColumn("dominant reason share (%)", format="%.1f"),
-                "anomaly_score": st.column_config.NumberColumn("anomaly score", format="%.0f"),
-            }
-        ),
+    render_scan_table(
+        display,
+        [
+            "Article variant",
+            "risk_level",
+            "risk_index",
+            "anomaly_flags",
+            "dominant_reason",
+            "returned",
+            "return_rate",
+            "gap_vs_category",
+        ],
+        {
+            **risk_column_config(),
+            "return_rate": st.column_config.NumberColumn("return rate (%)", format="%.1f"),
+            "gap_vs_category": st.column_config.NumberColumn("gap vs category", format="%.1f"),
+            "gap_vs_dataset": st.column_config.NumberColumn("gap vs dataset", format="%.1f"),
+            "dominant_reason_share": st.column_config.NumberColumn("dominant reason share (%)", format="%.1f"),
+            "anomaly_score": st.column_config.NumberColumn("anomaly score", format="%.0f"),
+        },
+        key="anomalies_table",
     )
 
 
@@ -2044,11 +2412,21 @@ def render_pricing_risk_report(df: pd.DataFrame) -> None:
         width="stretch",
     )
     display = add_risk_index(risk.head(250), "pricing_risk_score")
-    st.dataframe(
-        with_variant_links(display),
-        width="stretch",
-        hide_index=True,
-        column_config=variant_column_config({**pricing_column_config(), **report_column_config(), **risk_column_config()}),
+    render_scan_table(
+        display,
+        [
+            "Article variant",
+            "risk_level",
+            "risk_index",
+            "risk_type",
+            "estimated_returned_nmv",
+            "price_index_vs_category",
+            "gap_vs_category",
+            "return_rate",
+            "recommended_action",
+        ],
+        {**pricing_column_config(), **report_column_config(), **risk_column_config()},
+        key="pricing_risk_table",
     )
 
 
@@ -2139,11 +2517,297 @@ def render_new_product_early_warning(df: pd.DataFrame) -> None:
         width="stretch",
     )
     display = add_risk_index(warnings.head(250), "early_warning_score")
-    st.dataframe(
-        with_variant_links(display),
+    render_scan_table(
+        display,
+        [
+            "Article variant",
+            "risk_level",
+            "risk_index",
+            "days_online",
+            "early_warning_priority",
+            "dominant_reason",
+            "returned",
+            "return_rate",
+            "gap_vs_category",
+            "recommended_action",
+        ],
+        {**lifecycle_column_config(), **risk_column_config()},
+        key="new_product_warning_table",
+    )
+
+
+def render_predictive_risk(df: pd.DataFrame) -> None:
+    render_guidance(
+        "How to read Predictive risk",
+        "This model blends current return rate, category and article-type benchmarks, price premium, size skew, dominant reason concentration, product age, and estimated returned NMV to rank variants likely to create future returns.",
+    )
+    min_sold = st.slider("Minimum sales for predictive risk", 1, 500, 20)
+    risk = cached_predictive_return_risk(df, min_sold=min_sold)
+    if risk.empty:
+        st.info("No variants meet the minimum sales threshold.")
+        return
+
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Risk variants", format_number(len(risk)))
+    col_b.metric("Predicted returns 30d", format_number(risk["predicted_returns_next_30d"].sum()))
+    col_c.metric("Avg predicted RR", format_percent(risk["predicted_return_rate"].mean()))
+    col_d.metric("High risk", format_number((risk["predictive_risk_level"] == "High").sum()))
+
+    plot_variant_chart(predictive_risk_chart(risk), key="predictive_risk_scatter")
+    st.download_button(
+        "Download predictive risk CSV",
+        data=dataframe_to_csv_bytes(risk),
+        file_name=f"returns_predictive_risk_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
         width="stretch",
-        hide_index=True,
-        column_config=variant_column_config({**lifecycle_column_config(), **risk_column_config()}),
+    )
+    display = add_risk_index(risk.head(300), "predictive_risk_score")
+    render_scan_table(
+        display,
+        [
+            "Article variant",
+            "risk_level",
+            "risk_index",
+            "predictive_risk_level",
+            "risk_drivers",
+            "predicted_return_rate",
+            "predicted_returns_next_30d",
+            "gap_vs_category",
+            "recommended_action",
+        ],
+        {**pricing_column_config(), **report_column_config(), **risk_column_config()},
+        key="predictive_risk_table",
+    )
+
+
+def render_preventable_returns_report(df: pd.DataFrame) -> None:
+    render_guidance(
+        "How to read Preventable returns report",
+        "This report groups return reasons into fixable areas: size and fit, description expectations, visual or material mismatch, quality and supplier, fulfillment, and price/value. Use it to assign ownership by category, market, or variant.",
+    )
+    dimension_options = [
+        column
+        for column in ["Article variant", "Category", "Article type", "Country", "Season", "Gender", "Brand", "Supplier"]
+        if column in df.columns
+    ]
+    if not dimension_options:
+        st.info("Preventable returns report needs at least one grouping column.")
+        return
+    col_a, col_b = st.columns((1.2, 1))
+    with col_a:
+        dimension = st.selectbox("Report dimension", dimension_options, index=0)
+    with col_b:
+        min_sold = st.slider("Minimum sales for preventable report", 1, 500, 10)
+
+    report = cached_preventable_returns_report(df, dimension=dimension, min_sold=min_sold)
+    if report.empty:
+        st.info("No preventable return reason columns were found, or no groups meet the current threshold.")
+        return
+
+    top_area = str(report["top_preventable_area"].mode().iat[0]) if not report["top_preventable_area"].mode().empty else "Unknown"
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Groups", format_number(len(report)))
+    col_b.metric("Preventable returns", format_number(report["preventable_returns"].sum()))
+    col_c.metric("Avg preventable share", format_percent(report["preventable_share_of_returns"].mean()))
+    col_d.metric("Top area", top_area)
+
+    st.plotly_chart(preventable_returns_chart(report, dimension), width="stretch")
+    st.download_button(
+        "Download preventable returns CSV",
+        data=dataframe_to_csv_bytes(report),
+        file_name=f"returns_preventable_{dimension.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        width="stretch",
+    )
+    display = add_risk_index(report.head(300), "preventable_score")
+    render_scan_table(
+        display,
+        [
+            dimension,
+            "risk_level",
+            "risk_index",
+            "preventable_returns",
+            "preventable_share_of_returns",
+            "top_preventable_area",
+            "top_preventable_returns",
+            "recommended_action",
+        ],
+        {**report_column_config(), **risk_column_config()},
+        key="preventable_returns_table",
+        variant_links=dimension == "Article variant",
+    )
+
+
+def render_size_guidance_report(df: pd.DataFrame) -> None:
+    render_guidance(
+        "How to read Size guidance report",
+        "This report turns too-big and too-small return signals into customer-facing guidance: size up, size down, improve fit explanation, or monitor. Confidence depends on sales volume and size-return share.",
+    )
+    min_sold = st.slider("Minimum sales for size guidance", 1, 500, 10)
+    report = cached_size_guidance_report(df, min_sold=min_sold)
+    if report.empty:
+        st.info("Size guidance needs 'Item is too big' and 'Item is too small' reason columns.")
+        return
+
+    action_mask = report["guidance"].isin(["Recommend size up", "Recommend size down", "Improve fit explanation"])
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Variants with size signal", format_number(len(report)))
+    col_b.metric("Actionable guidance", format_number(action_mask.sum()))
+    col_c.metric("High confidence", format_number((report["confidence"] == "High").sum()))
+    col_d.metric("Size returns", format_number(report["size_returns"].sum()))
+
+    plot_variant_chart(size_guidance_chart(report), key="size_guidance_scatter")
+    st.download_button(
+        "Download size guidance CSV",
+        data=dataframe_to_csv_bytes(report),
+        file_name=f"returns_size_guidance_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        width="stretch",
+    )
+    display = add_risk_index(report.head(300), "guidance_score")
+    render_scan_table(
+        display,
+        [
+            "Article variant",
+            "risk_level",
+            "risk_index",
+            "guidance",
+            "confidence",
+            "size_balance",
+            "size_share_of_returns",
+            "size_returns",
+            "recommended_copy",
+        ],
+        {**size_fit_column_config(), **report_column_config(), **risk_column_config()},
+        key="size_guidance_table",
+    )
+
+
+def render_trend_report(df: pd.DataFrame) -> None:
+    render_guidance(
+        "How to read Trend report",
+        "Load a baseline CSV from a previous period and compare it with the current filtered data. The score prioritizes groups where return rate, return volume, and estimated returned NMV are getting worse.",
+    )
+    dimension_options = [
+        column
+        for column in ["Article variant", "Category", "Article type", "Country", "Season", "Gender", "Brand", "Supplier"]
+        if column in df.columns
+    ]
+    if not dimension_options:
+        st.info("Trend report needs at least one comparable dimension.")
+        return
+
+    col_a, col_b = st.columns((1, 1.4))
+    with col_a:
+        dimension = st.selectbox("Trend dimension", dimension_options, index=0)
+    with col_b:
+        baseline_path = st.text_input("Baseline CSV path", value="data/returns_previous.csv")
+    baseline_upload = st.file_uploader("Upload baseline CSV", type=["csv"], key="trend_baseline_upload")
+
+    baseline_df = None
+    source_label = ""
+    try:
+        if baseline_upload is not None:
+            baseline_df = load_returns_csv(baseline_upload)
+            source_label = baseline_upload.name
+        elif baseline_path and Path(baseline_path).exists():
+            baseline_df = load_returns_csv(Path(baseline_path))
+            source_label = baseline_path
+    except Exception as exc:
+        st.error(f"Could not load baseline CSV: {exc}")
+        return
+
+    if baseline_df is None:
+        st.info("Upload a baseline CSV or place the previous-period file at data/returns_previous.csv.")
+        return
+
+    report = cached_trend_report(df, baseline_df, dimension)
+    if report.empty:
+        st.info("No trend comparison is available for the selected dimension.")
+        return
+
+    worse = report[report["return_rate_delta"] > 0]
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Compared groups", format_number(len(report)))
+    col_b.metric("Worse RR groups", format_number(len(worse)))
+    col_c.metric("Returned delta", format_number(report["returned_delta"].sum()))
+    col_d.metric("Avg RR delta", format_pp(report["return_rate_delta"].mean()))
+    st.caption(f"Baseline source: {source_label}")
+
+    st.plotly_chart(trend_report_chart(report, dimension), width="stretch")
+    st.download_button(
+        "Download trend report CSV",
+        data=dataframe_to_csv_bytes(report),
+        file_name=f"returns_trend_{dimension.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        width="stretch",
+    )
+    display = add_risk_index(report.head(300), "trend_score")
+    render_scan_table(
+        display,
+        [
+            dimension,
+            "risk_level",
+            "risk_index",
+            "trend_direction",
+            "return_rate_current",
+            "return_rate_baseline",
+            "return_rate_delta",
+            "returned_delta",
+            "estimated_returned_nmv_delta",
+        ],
+        {**report_column_config(), **risk_column_config()},
+        key="trend_report_table",
+        variant_links=dimension == "Article variant",
+    )
+
+
+def render_forecast_report(df: pd.DataFrame) -> None:
+    render_guidance(
+        "How to read Forecast report",
+        "The forecast projects variant-level sold and returned items for the selected horizon using observed daily volume and predictive return rate. It is a planning signal for prioritization, not a demand forecast.",
+    )
+    col_a, col_b = st.columns(2)
+    with col_a:
+        horizon_days = st.slider("Forecast horizon in days", 7, 180, 30, step=7)
+    with col_b:
+        min_sold = st.slider("Minimum sales for forecast", 1, 500, 20)
+
+    report = cached_forecast_report(df, horizon_days=horizon_days, min_sold=min_sold)
+    if report.empty:
+        st.info("No forecast is available for the current filters and thresholds.")
+        return
+
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Forecast returns", format_number(report["forecast_returns"].sum()))
+    col_b.metric("Forecast returned NMV", format_number(report["forecast_returned_nmv"].sum()))
+    col_c.metric("High risk variants", format_number((report["forecast_risk_level"] == "High").sum()))
+    col_d.metric("Avg forecast RR", format_percent(report["forecast_return_rate"].mean()))
+
+    plot_variant_chart(forecast_report_chart(report), key="forecast_report_scatter")
+    st.download_button(
+        "Download forecast report CSV",
+        data=dataframe_to_csv_bytes(report),
+        file_name=f"returns_forecast_{horizon_days}d_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        width="stretch",
+    )
+    display = add_risk_index(report.head(300), "forecast_risk_score")
+    render_scan_table(
+        display,
+        [
+            "Article variant",
+            "risk_level",
+            "risk_index",
+            "forecast_risk_level",
+            "forecast_returns",
+            "forecast_return_rate",
+            "forecast_returned_nmv",
+            "daily_returns",
+            "forecast_note",
+        ],
+        {**pricing_column_config(), **report_column_config(), **risk_column_config()},
+        key="forecast_report_table",
     )
 
 
@@ -2505,11 +3169,21 @@ def render_quality_supplier_report(df: pd.DataFrame) -> None:
         width="stretch",
     )
     display = add_risk_index(report, "risk_score")
-    st.dataframe(
+    render_scan_table(
         display,
-        width="stretch",
-        hide_index=True,
-        column_config={**report_column_config(), **risk_column_config()},
+        [
+            dimension,
+            "risk_level",
+            "risk_index",
+            "quality_returns",
+            "quality_share_of_returns",
+            "top_quality_reason",
+            "risk_score",
+            "recommended_action",
+        ],
+        {**report_column_config(), **risk_column_config()},
+        key="quality_supplier_table",
+        variant_links=False,
     )
 
 
@@ -2672,8 +3346,7 @@ def render_compare(df: pd.DataFrame) -> None:
             "top_reason_share": ":.1f",
         },
     )
-    fig.update_layout(height=440, template="plotly_white", margin=dict(l=16, r=16, t=48, b=24))
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(apply_layout(fig, 440), width="stretch")
 
     left, right = st.columns((1.2, 1))
     with left:
@@ -2736,12 +3409,18 @@ def render_selected_view(view: str, df: pd.DataFrame) -> None:
         render_overview(df)
     elif view == "Compare":
         render_compare(df)
+    elif view == "Trend report":
+        render_trend_report(df)
+    elif view == "Forecast report":
+        render_forecast_report(df)
     elif view == "Action list":
         render_action_list(df)
     elif view == "Watchlist":
         render_watchlist(df)
     elif view == "Anomalies":
         render_anomalies(df)
+    elif view == "Predictive risk":
+        render_predictive_risk(df)
     elif view == "Benchmarks":
         render_benchmarks(df)
     elif view == "New product early warning":
@@ -2760,6 +3439,12 @@ def render_selected_view(view: str, df: pd.DataFrame) -> None:
         render_reasons(df)
     elif view == "Product reason ranking":
         render_product_reason_ranking(df)
+    elif view == "Article type reasons report":
+        render_article_type_reasons_report(df)
+    elif view == "Preventable returns report":
+        render_preventable_returns_report(df)
+    elif view == "Size guidance report":
+        render_size_guidance_report(df)
     elif view == "Size & fit intelligence":
         render_size_fit_intelligence(df)
     elif view == "Sizing":
@@ -2785,7 +3470,9 @@ def render_selected_view(view: str, df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    theme = sidebar_appearance()
+    set_chart_theme(theme.lower())
+    st.markdown(build_custom_css(theme), unsafe_allow_html=True)
     df = sidebar_data_source()
     if df is None:
         st.stop()

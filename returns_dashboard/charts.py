@@ -6,31 +6,47 @@ import plotly.graph_objects as go
 
 
 COLORWAY = [
-    "#31572c",
-    "#4f772d",
-    "#90a955",
-    "#f9c74f",
-    "#f8961e",
-    "#f3722c",
-    "#577590",
-    "#43aa8b",
-    "#277da1",
+    "#1f6f5b",
+    "#2d9c77",
+    "#8dbf67",
+    "#f2b84b",
+    "#e86f3f",
+    "#c63d32",
+    "#4a6f8a",
+    "#3182a8",
+    "#7a5ea8",
 ]
+CHART_THEME = "light"
+
+
+def set_chart_theme(theme: str) -> None:
+    global CHART_THEME
+    CHART_THEME = "dark" if str(theme).lower() == "dark" else "light"
 
 
 def apply_layout(fig: go.Figure, height: int = 420) -> go.Figure:
+    dark = CHART_THEME == "dark"
+    paper = "#111827" if dark else "rgba(255,255,255,0)"
+    plot = "#111827" if dark else "rgba(255,255,255,0)"
+    ink = "#e5eef0" if dark else "#243036"
+    muted = "#9fb0b5" if dark else "#63736d"
+    grid = "rgba(229,238,240,.12)" if dark else "#edf2ef"
+    hover_bg = "#f8faf9" if dark else "#102027"
+    hover_fg = "#102027" if dark else "white"
     fig.update_layout(
         height=height,
-        template="plotly_white",
+        template="plotly_dark" if dark else "plotly_white",
+        paper_bgcolor=paper,
+        plot_bgcolor=plot,
         colorway=COLORWAY,
         margin=dict(l=16, r=16, t=48, b=24),
-        font=dict(family="Inter, Segoe UI, sans-serif", size=13, color="#263238"),
-        title=dict(font=dict(size=18, color="#102027")),
-        hoverlabel=dict(bgcolor="#102027", font_size=12, font_color="white"),
+        font=dict(family="Inter, Segoe UI, sans-serif", size=13, color=ink),
+        title=dict(font=dict(size=18, color=ink)),
+        hoverlabel=dict(bgcolor=hover_bg, font_size=12, font_color=hover_fg),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    fig.update_xaxes(showgrid=True, gridcolor="#edf2ef", zeroline=False)
-    fig.update_yaxes(showgrid=True, gridcolor="#edf2ef", zeroline=False)
+    fig.update_xaxes(showgrid=True, gridcolor=grid, zeroline=False, linecolor=grid, tickfont=dict(color=muted))
+    fig.update_yaxes(showgrid=True, gridcolor=grid, zeroline=False, linecolor=grid, tickfont=dict(color=muted))
     return fig
 
 
@@ -273,6 +289,151 @@ def quality_supplier_chart(df: pd.DataFrame, dimension: str) -> go.Figure:
         },
     )
     return apply_layout(fig, 500)
+
+
+def predictive_risk_chart(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return apply_layout(go.Figure(), 520)
+    fig = px.scatter(
+        df.head(120),
+        x="predicted_return_rate",
+        y="predicted_returns_next_30d",
+        size="estimated_returned_nmv",
+        color="predictive_risk_score",
+        hover_name="Article variant",
+        color_continuous_scale=["#52b788", "#f9c74f", "#d00000"],
+        labels={
+            "predicted_return_rate": "Predicted return rate (%)",
+            "predicted_returns_next_30d": "Predicted returns next 30d",
+            "estimated_returned_nmv": "Estimated returned NMV",
+            "predictive_risk_score": "Risk score",
+        },
+        title="Predictive return risk: rate vs expected impact",
+        hover_data={
+            "Category": True,
+            "Article type": True,
+            "sold": ":,.0f",
+            "returned": ":,.0f",
+            "return_rate": ":.1f",
+            "gap_vs_category": ":.1f",
+            "risk_drivers": True,
+        },
+        custom_data=["Article variant"],
+    )
+    return apply_layout(fig, 540)
+
+
+def preventable_returns_chart(df: pd.DataFrame, dimension: str) -> go.Figure:
+    if df.empty or dimension not in df.columns:
+        return apply_layout(go.Figure(), 500)
+    data = df.sort_values("preventable_returns", ascending=True).tail(25)
+    fig = px.bar(
+        data,
+        x="preventable_returns",
+        y=dimension,
+        orientation="h",
+        color="top_preventable_area",
+        labels={
+            "preventable_returns": "Preventable returns",
+            dimension: dimension,
+            "top_preventable_area": "Top preventable area",
+        },
+        title=f"Preventable returns by {dimension}",
+        hover_data={
+            "sold": ":,.0f",
+            "returned": ":,.0f",
+            "return_rate": ":.1f",
+            "preventable_share_of_returns": ":.1f",
+            "recommended_action": True,
+        },
+    )
+    return apply_layout(fig, 540)
+
+
+def size_guidance_chart(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return apply_layout(go.Figure(), 520)
+    fig = px.scatter(
+        df.head(120),
+        x="size_balance",
+        y="size_share_of_returns",
+        size="size_returns",
+        color="guidance",
+        hover_name="Article variant",
+        labels={
+            "size_balance": "Size skew: too big < 0 / too small > 0",
+            "size_share_of_returns": "Size share of returns (%)",
+            "size_returns": "Size returns",
+            "guidance": "Guidance",
+        },
+        title="Size guidance: signal strength and direction",
+        hover_data={
+            "Category": True,
+            "Article type": True,
+            "sold": ":,.0f",
+            "return_rate": ":.1f",
+            "confidence": True,
+        },
+        custom_data=["Article variant"],
+    )
+    fig.add_vline(x=0, line_dash="dash", line_color="#63736d")
+    return apply_layout(fig, 540)
+
+
+def trend_report_chart(df: pd.DataFrame, dimension: str) -> go.Figure:
+    if df.empty or dimension not in df.columns:
+        return apply_layout(go.Figure(), 500)
+    data = df.sort_values("trend_score", ascending=True).tail(25)
+    fig = px.bar(
+        data,
+        x="return_rate_delta",
+        y=dimension,
+        orientation="h",
+        color="trend_direction",
+        labels={"return_rate_delta": "Return-rate delta (p.p.)", dimension: dimension},
+        title=f"Trend report: return-rate change by {dimension}",
+        hover_data={
+            "returned_current": ":,.0f",
+            "returned_baseline": ":,.0f",
+            "returned_delta": ":,.0f",
+            "estimated_returned_nmv_delta": ":,.0f",
+            "trend_score": ":.0f",
+        },
+    )
+    fig.add_vline(x=0, line_dash="dash", line_color="#63736d")
+    return apply_layout(fig, 560)
+
+
+def forecast_report_chart(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return apply_layout(go.Figure(), 520)
+    data = df.head(120)
+    fig = px.scatter(
+        data,
+        x="forecast_return_rate",
+        y="forecast_returns",
+        size="forecast_returned_nmv",
+        color="forecast_risk_score",
+        hover_name="Article variant",
+        color_continuous_scale=["#52b788", "#f9c74f", "#d00000"],
+        labels={
+            "forecast_return_rate": "Forecast return rate (%)",
+            "forecast_returns": "Forecast returns",
+            "forecast_returned_nmv": "Forecast returned NMV",
+            "forecast_risk_score": "Forecast risk score",
+        },
+        title="Forecast: expected returns and risk",
+        hover_data={
+            "Category": True,
+            "Article type": True,
+            "sold": ":,.0f",
+            "returned": ":,.0f",
+            "daily_returns": ":.2f",
+            "forecast_note": True,
+        },
+        custom_data=["Article variant"],
+    )
+    return apply_layout(fig, 540)
 
 
 def stacked_reasons(reason_dim_df: pd.DataFrame, dimension: str, top_n: int = 10) -> go.Figure:
